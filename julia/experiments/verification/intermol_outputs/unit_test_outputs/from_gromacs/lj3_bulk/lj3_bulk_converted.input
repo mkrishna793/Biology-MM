@@ -1,0 +1,21 @@
+units real
+atom_style full
+
+dimension 3
+boundary p p p
+
+special_bonds lj 0.0 0.0 0.5 coul 0.0 0.0 0.5
+
+read_data lj3_bulk_converted.lmp
+
+pair_style lj/cut 9.0 
+pair_modify tail yes
+kspace_style none
+
+pair_coeff 1 1   0.2390057   4.0000000
+
+pair_modify mix geometric
+
+thermo_style custom ebond eangle edihed eimp epair evdwl ecoul elong etail pe
+
+run 0

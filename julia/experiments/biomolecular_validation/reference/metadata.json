@@ -1,0 +1,17 @@
+{
+  "openmm_version": "8.6.1",
+  "platform": "Reference",
+  "force_field": "OpenMM tip3p.xml",
+  "electrostatics": "PME",
+  "box_nm": [
+    2,
+    2,
+    2
+  ],
+  "atoms": 774,
+  "steps": 100,
+  "seed": 2026,
+  "initial_potential_kj_mol": -1071.215711902404,
+  "minimized_potential_kj_mol": -11374.613994997575,
+  "warning": "Small generated fixture only; not an equilibrated reference or accepted scientific range."
+}

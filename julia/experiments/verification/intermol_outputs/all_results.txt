@@ -1,0 +1,143 @@
+
+  Results for GROMACS to GROMACS Conversion
+   ===============================================
+Input File         Status/Potential Energy Diff
+-----------------------------------------------
+angle10_vacuum                        Converted
+angle1_vacuum                         Converted
+angle2_vacuum                         Converted
+angle3_vacuum                         Converted
+angle4_vacuum                         Converted
+angle5_vacuum                         Converted
+angle6_vacuum                         Converted
+bond1_vacuum                          Converted
+bond2_vacuum                          Converted
+bond3_vacuum                          Converted
+bond4_vacuum                          Converted
+bond5_vacuum                          Converted
+bond6_vacuum                          Converted
+bond7_vacuum                          Converted
+dihedral1_vacuum                      Converted
+dihedral2_vacuum                      Converted
+dihedral3_vacuum                      Converted
+dihedral4_vacuum                      Converted
+dihedral5_vacuum                      Converted
+dihedral9_vacuum                      Converted
+lj3_bulk                              Converted
+pairs1_vacuum                         Converted
+spce1_bulk                            Converted
+virtual21_vacuum                      Converted
+virtual31_vacuum                      Converted
+virtual32_vacuum                      Converted
+virtual33_vacuum                      Converted
+virtual34_vacuum                      Converted
+virtual42_vacuum                      Converted
+
+
+   Results for GROMACS to LAMMPS Conversion
+   ===============================================
+Input File         Status/Potential Energy Diff
+-----------------------------------------------
+angle10_vacuum     The RestrictedBendingAngle interaction type is not supported in LAMMPS.
+angle1_vacuum                         Converted
+angle2_vacuum                         Converted
+angle3_vacuum      The CrossBondBondAngle interaction type is not supported in LAMMPS.
+angle4_vacuum      The CrossBondAngleAngle interaction type is not supported in LAMMPS.
+angle5_vacuum                         Converted
+angle6_vacuum      The QuarticAngle interaction type is not supported in LAMMPS.
+bond1_vacuum                          Converted
+bond2_vacuum       The G96Bond interaction type is not supported in LAMMPS.
+bond3_vacuum                          Converted
+bond4_vacuum       The CubicBond interaction type is not supported in LAMMPS.
+bond5_vacuum       ConnectionBond conversion has not yet been implemented in InterMol for LAMMPS.
+bond6_vacuum                          Converted
+bond7_vacuum       FeneBond conversion has not yet been implemented in InterMol for LAMMPS.
+dihedral1_vacuum                      Converted
+dihedral2_vacuum                      Converted
+dihedral3_vacuum                      Converted
+dihedral4_vacuum                      Converted
+dihedral5_vacuum                      Converted
+dihedral9_vacuum                      Converted
+lj3_bulk                              Converted
+pairs1_vacuum                         Converted
+spce1_bulk                            Converted
+virtual21_vacuum                      Converted
+virtual31_vacuum                      Converted
+virtual32_vacuum                      Converted
+virtual33_vacuum                      Converted
+virtual34_vacuum                      Converted
+virtual42_vacuum                      Converted
+
+
+  Results for GROMACS to DESMOND Conversion
+   ===============================================
+Input File         Status/Potential Energy Diff
+-----------------------------------------------
+angle10_vacuum     The RestrictedBendingAngle interaction type is not supported in DESMOND.
+angle1_vacuum      Precision not allowed in integer format specifier
+angle2_vacuum      The CosineSquaredAngle interaction type is not supported in DESMOND.
+angle3_vacuum      The CrossBondBondAngle interaction type is not supported in DESMOND.
+angle4_vacuum      The CrossBondAngleAngle interaction type is not supported in DESMOND.
+angle5_vacuum      Precision not allowed in integer format specifier
+angle6_vacuum      The QuarticAngle interaction type is not supported in DESMOND.
+bond1_vacuum       Precision not allowed in integer format specifier
+bond2_vacuum       The G96Bond interaction type is not supported in DESMOND.
+bond3_vacuum       The MorseBond interaction type is not supported in DESMOND.
+bond4_vacuum       The CubicBond interaction type is not supported in DESMOND.
+bond5_vacuum       The ConnectionBond interaction type is not supported in DESMOND.
+bond6_vacuum       The HarmonicPotentialBond interaction type is not supported in DESMOND.
+bond7_vacuum       The FeneBond interaction type is not supported in DESMOND.
+dihedral1_vacuum                      Converted
+dihedral2_vacuum                      Converted
+dihedral3_vacuum   Precision not allowed in integer format specifier
+dihedral4_vacuum                      Converted
+dihedral5_vacuum   Precision not allowed in integer format specifier
+dihedral9_vacuum                      Converted
+lj3_bulk                              Converted
+pairs1_vacuum      Precision not allowed in integer format specifier
+spce1_bulk                            Converted
+virtual21_vacuum   Precision not allowed in integer format specifier
+virtual31_vacuum   Precision not allowed in integer format specifier
+virtual32_vacuum   Precision not allowed in integer format specifier
+virtual33_vacuum   Precision not allowed in integer format specifier
+virtual34_vacuum   Precision not allowed in integer format specifier
+virtual42_vacuum   Precision not allowed in integer format specifier
+
+
+   Results for GROMACS to AMBER Conversion
+    ===============================================
+Input File         Status/Potential Energy Diff
+-----------------------------------------------
+angle10_vacuum     angles funct != 1 or 5; unknown functional
+angle1_vacuum                         Converted
+angle2_vacuum      angles funct != 1 or 5; unknown functional
+angle3_vacuum      angles funct != 1 or 5; unknown functional
+angle4_vacuum      angles funct != 1 or 5; unknown functional
+angle5_vacuum      ChamberParm does not support all potential terms defined in the input Structure
+angle6_vacuum      angles funct != 1 or 5; unknown functional
+bond1_vacuum                          Converted
+bond2_vacuum       bond funct != 1; unknown functional
+bond3_vacuum       bond funct != 1; unknown functional
+bond4_vacuum       bond funct != 1; unknown functional
+bond5_vacuum       bond funct != 1; unknown functional
+bond6_vacuum       bond funct != 1; unknown functional
+bond7_vacuum       bond funct != 1; unknown functional
+dihedral1_vacuum                      Converted
+dihedral2_vacuum                      Converted
+dihedral3_vacuum                      Converted
+dihedral4_vacuum                      Converted
+dihedral5_vacuum                      Converted
+dihedral9_vacuum                      Converted
+lj3_bulk                              Converted
+pairs1_vacuum      Periodicity of 0 detected with non-zero force constant. Changing periodicity to 1 and force constant to 0 to ensure 1-4 nonbonded pairs are properly identified. This might cause a shift in the energy, but will leave forces unaffected
+spce1_bulk                            Converted
+virtual21_vacuum                      Converted
+virtual31_vacuum   No vsite frames with different weights
+virtual32_vacuum   Only 3-point vsite type 1 is supported
+virtual33_vacuum   Only 3-point vsite type 1 is supported
+virtual34_vacuum   Only 3-point vsite type 1 is supported
+virtual42_vacuum                      Converted
+
+For the standard output of each conversion, see <repo-root>/unit_test_outputs/from_gromacs/[system name]/info.log
+For a detailed DEBUG-level log of each conversion, see <repo-root>/unit_test_outputs/from_gromacs/[system name]/debug.log
+

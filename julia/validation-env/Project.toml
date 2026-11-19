@@ -1,0 +1,7 @@
+[deps]
+FoundationCore = "b3a9f2c1-7d4e-4a6b-9c8d-1f2e3a4b5c6d"
+Molly = "aa0f7f06-fcc0-5ec4-a7f3-a573f33f9c4c"
+Unitful = "1986cc42-f94f-5a68-af5c-568840ba703d"
+
+[sources]
+FoundationCore = {path = ".."}

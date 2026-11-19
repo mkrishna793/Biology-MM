@@ -1,0 +1,98 @@
+Provenance for reference/terms.tsv
+===================================
+
+Retrieved / generated: 2026-11-12, on darwin arm64.
+
+1. Primary target that was NOT available as a per-term reference
+---------------------------------------------------------------
+NIST Standard Reference Simulation Website (SRSW), NIST SRD 173,
+DOI 10.18434/T4M88Q, "Last Update to Data Content: September 2024".
+Pages fetched on 2026-11-12:
+
+  index     https://www.nist.gov/programs-projects/nist-standard-reference-simulation-website
+  ethane    http://mmlapps.nist.gov/srs/ETHANE/index.htm
+  ethane    http://mmlapps.nist.gov/srs/ETHANE/ethane_sat.htm
+  octane    http://mmlapps.nist.gov/srs/OCTANE/index.htm
+  octane    http://mmlapps.nist.gov/srs/OCTANE/octane_sat.htm
+  butane    https://www.nist.gov/chemical-informatics-research-group/
+            sat-tmmc-liquid-vapor-coexistence-properties-trappe-ua-n-butane
+
+What those pages actually contain (verbatim structure): simulation metadata
+(simulation box, LJ truncation at 15 A / 30 A, 1e9 or 4e9 trial moves) and
+liquid-vapour coexistence tables (T, rho_vap, rho_liq, p_sat, u_vap, u_liq,
+ln z_sat, with uncertainties).  Example row, ethane sat at 300 K:
+  rho_vap = 1.237e+02 kg/m3, rho_liq = 3.042e+02 kg/m3, p_sat = 4.889e+00 MPa,
+  u_vap = -3.12 kJ/mol, u_liq = -6.52 kJ/mol, ln z = -7.11260e+00.
+The force field is cited only as "M. G. Martin and J. I. Siepmann, J. Phys.
+Chem. B 102, 2569 (1998)".  NO bond, angle, or torsion parameters, and no
+per-term energies, appear anywhere on these pages or in the downloadable
+macrostates (c8.*.tar.gz contain histogram samples, not parameters).
+
+Consequence: SRSW cannot supply per-term bonded reference values.  A TraPPE
+bond/angle/torsion number quoted from these pages would be fabricated, so none
+is quoted here.  Closing the convention gap therefore uses (2), as the lane
+brief allows.
+
+2. External sources actually used
+--------------------------------
+Stage 1 (parameters): two independent parsers over GROMACS text.
+Stage 2 (energies/forces): OpenMM 8.6.1 as the external evaluator.
+Corpus (shipped inside the InterMol distribution's own test tree; not modified):
+
+  intermol/tests/gromacs/unit_tests/dihedral9_vacuum/dihedral9_vacuum.{top,gro}
+  intermol/tests/gromacs/unit_tests/dihedral1_vacuum/dihedral1_vacuum.{top,gro}
+
+  sha256 dihedral9_vacuum.top = 7a40a35a2b4198085dcb2801853e8a2f4f93c73580ab47fb3f720e06f8ff8285
+  sha256 dihedral1_vacuum.top = 4f974e690ce913127660a8f3c67b6a18496d6a852cdabfed7f6f3b91cd6aedcf
+  sha256 (both .gro)          = 26d9b2b995bba16f137e56822a6a2f0e92cee50c44a41fe5e2aeba95b069ff4c
+
+Both files model the same 9-atom OPLS-AA ethanol:
+  funct 1 bonds, funct 1 angles, funct 1 and funct 9 proper dihedrals,
+  OPLS 1-4 pairs with fudgeLJ = fudgeQQ = 0.5 (nonbonded; out of scope here).
+
+Stage-1 tools (isolated env ~/.cache/biology-mm/intermol-verify;
+nothing installed into the repository or the global Julia depot):
+
+  Python 3.10.22
+  InterMol 0.1.2+6.g7125764   (gromacs_parser; per-force k/length/theta/phi)
+  ParmEd  4.3.1               (gromacs topology reader; parmed.geometry.dihedral)
+  numpy 1.26.4
+
+  Note: this env does NOT contain OpenMM; the evaluator lives in the separate
+  project venv below.
+
+Stage-2 tools (~/.cache/biology-mm/.venv):
+
+  Python  3.12.15
+  OpenMM  8.6.1              (platform "Reference", double precision)
+  numpy   2.5.4
+  platforms reported: Reference, CPU, OpenCL
+
+Stage 2 uses the standard bonded force classes only:
+  openmm.HarmonicBondForce        E = 0.5 k (r-r0)^2
+  openmm.HarmonicAngleForce       E = 0.5 k (theta-theta0)^2
+  openmm.PeriodicTorsionForce     E = k [1 + cos(n phi - phase)]
+fed from the ParmEd columns through the declared conversion
+(836.8 / 8.368 / 4.184).  Per-term energy, per-term force vector, and the
+all-bonded total are frozen in reference/openmm_terms.tsv.
+
+The extractor requires both parsers to agree before writing a row:
+  bond    InterMol k [kJ/mol/nm^2]  ==  2 * ParmEd k * 4.184 * 100 [kcal/mol/A^2]
+  angle   InterMol k [kJ/mol/rad^2] ==  2 * ParmEd k * 4.184       [kcal/mol/rad^2]
+  dihedral InterMol k [kJ/mol]      ==      ParmEd phi_k * 4.184   [kcal/mol]
+  bond r0 / angle theta0 / dihedral phase agree after unit conversion.
+Any disagreement aborts extraction (SystemExit), so a silent convention drift
+in either parser cannot enter the table.
+
+3. Deliberately not used
+------------------------
+* No GROMACS or LAMMPS binary is installed (gmx, lmp absent from PATH), so the
+  GROMACS text could not be run through GROMACS itself.  The external evaluator
+  is OpenMM 8.6.1 (stage 2); there is no trajectory, integrator or binary-level
+  comparison with GROMACS/LAMMPS.
+* InterMol's internal re-expression of GROMACS proper dihedrals as a cosine
+  series (fc0 = k, fc_n = k, phi = phi_s) is recorded in terms.tsv (columns
+  fc0..fc6) but is NOT trusted as the reference: reading it with the phase
+  inside the harmonic, k[1+cos(n(phi-phi_s))], disagrees with the documented
+  GROMACS form for every term whose n*phi_s != phi_s (see README "named
+  mismatches").
