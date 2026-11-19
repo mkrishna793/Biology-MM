@@ -1,0 +1,51 @@
+# Lean 4 build & cache artifacts
+lean/.lake/
+*.olean
+*.ilean
+*.trace
+
+# Rocq build artifacts
+rocq/*.vo
+rocq/*.vok
+rocq/*.vos
+rocq/*.glob
+rocq/.*.aux
+
+# Python caches
+**/__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Validation output / scratch artifacts
+validation/results/
+
+# Large / ephemeral experiment trajectory & checkpoint runs
+julia/experiments/tip3p_trajectory/runs/
+julia/experiments/**/*.dcd
+julia/experiments/**/*.chk
+julia/experiments/**/*.tar.gz
+julia/experiments/**/checkpoint.bin
+julia/experiments/**/checkpoint.bin.prev
+julia/experiments/**/*.tmp
+
+# macOS metadata
+.DS_Store
+
+# Native C++/GPU build and compiled shared libraries
+native/build/
+julia/lib/*.dylib
+julia/lib/*.so
+julia/lib/*.dll
+julia/lib/*.lib
+julia/lib/*.exp
+julia/lib/shaders/
+!julia/lib/.gitkeep
+
+# Local harness metadata
+.prime-kernel/
+.prime-research/
+
+# Python packaging artifacts
+python/*.egg-info/
+python/build/
+python/dist/
