@@ -1,0 +1,666 @@
+{
+ "configs": [
+  {
+   "class_sum": {
+    "energy": -169.71668488047453,
+    "energy_abs_err": 0.0,
+    "energy_rel_err": 0.0,
+    "force_abs_err": 2.5510787963867188e-05,
+    "force_rel_err": 6.548565026452662e-10
+   },
+   "classes": {
+    "f0:HarmonicBondForce": {
+     "energy": 34.56063253634672,
+     "force_absmax": 5088.401678926981,
+     "force_norm": 7873.316048304328,
+     "label": "f0:HarmonicBondForce"
+    },
+    "f1:HarmonicAngleForce": {
+     "energy": 1.1359429821586093,
+     "force_absmax": 293.26989759938607,
+     "force_norm": 534.5365062591769,
+     "label": "f1:HarmonicAngleForce"
+    },
+    "f2:HarmonicBondForce": {
+     "energy": 0.03311025279071282,
+     "force_absmax": 16.83801302570485,
+     "force_norm": 29.961228804054926,
+     "label": "f2:HarmonicBondForce"
+    },
+    "f3:PeriodicTorsionForce": {
+     "energy": 4.51871682972671,
+     "force_absmax": 0.09870186151363972,
+     "force_norm": 0.12847936219897735,
+     "label": "f3:PeriodicTorsionForce"
+    },
+    "f4:CustomTorsionForce": {
+     "energy": 0.0,
+     "force_absmax": 0.0,
+     "force_norm": 0.0,
+     "label": "f4:CustomTorsionForce"
+    },
+    "f5:CMAPTorsionForce": {
+     "energy": 0.0,
+     "force_absmax": 0.0,
+     "force_norm": 0.0,
+     "label": "f5:CMAPTorsionForce"
+    },
+    "f6:NonbondedForce": {
+     "coulomb_energy": -209.49828837944625,
+     "energy": -209.55575198745584,
+     "force_absmax": 528.6641845703125,
+     "force_norm": 852.1944875718352,
+     "label": "f6:NonbondedForce",
+     "lj_energy": -0.057463608009578185
+    },
+    "f7:CustomNonbondedForce[12-6]": {
+     "energy": -0.40933549404144287,
+     "force_absmax": 2.412501096725464,
+     "force_norm": 3.7538440653384026,
+     "label": "f7:CustomNonbondedForce[12-6]"
+    }
+   },
+   "config": 0,
+   "exact": {
+    "classes": {
+     "angles": {
+      "abs_err": 7.549516567451064e-15,
+      "force_norm_numpy": 534.5365062591765,
+      "force_norm_openmm": 534.5365062591769,
+      "force_norm_rel_err": 8.507320745385611e-16,
+      "numpy": 1.1359429821586018,
+      "openmm": 1.1359429821586093,
+      "rel_err": 6.646034779936641e-15
+     },
+     "bonds": {
+      "abs_err": 2.1316282072803006e-14,
+      "force_norm_numpy": 7873.316048304326,
+      "force_norm_openmm": 7873.316048304328,
+      "force_norm_rel_err": 3.4654827630175174e-16,
+      "numpy": 34.5606325363467,
+      "openmm": 34.56063253634672,
+      "rel_err": 6.167792805986725e-16
+     },
+     "cmaps": {
+      "abs_err": 0.0,
+      "numpy": 0.0,
+      "openmm": 0.0,
+      "rel_err": 0.0
+     },
+     "coulomb": {
+      "abs_err": 1.161735767141181e-05,
+      "force_norm_numpy": 852.7288047777532,
+      "force_norm_openmm": 852.7289278278847,
+      "force_norm_rel_err": 1.4430157987674183e-07,
+      "numpy": -209.49827676208858,
+      "openmm": -209.49828837944625,
+      "rel_err": 5.545323430218336e-08
+     },
+     "impropers": {
+      "abs_err": 0.0,
+      "force_norm_numpy": 0.0,
+      "force_norm_openmm": 0.0,
+      "force_norm_rel_err": 0.0,
+      "numpy": 0.0,
+      "openmm": 0.0,
+      "rel_err": 0.0
+     },
+     "lj": {
+      "abs_err": 3.268546355794655e-08,
+      "force_norm_numpy": 3.7538436410157208,
+      "force_norm_openmm": 3.7538440653384026,
+      "force_norm_rel_err": 1.1303684289875609e-07,
+      "numpy": -0.4093354613559793,
+      "openmm": -0.40933549404144287,
+      "rel_err": 7.985005950800185e-08
+     },
+     "lj14": {
+      "abs_err": 4.85722573273506e-17,
+      "force_norm_numpy": 1.7003580557523603,
+      "force_norm_openmm": 1.7003580557523585,
+      "force_norm_rel_err": 1.0446957529861337e-15,
+      "numpy": -0.05746360800957823,
+      "openmm": -0.057463608009578185,
+      "rel_err": 8.45269884885307e-16
+     },
+     "torsions": {
+      "abs_err": 1.7763568394002505e-15,
+      "force_norm_numpy": 0.12847936219044964,
+      "force_norm_openmm": 0.12847936219897735,
+      "force_norm_rel_err": 6.637413334653487e-11,
+      "numpy": 4.518716829726712,
+      "openmm": 4.51871682972671,
+      "rel_err": 3.9311089991617887e-16
+     },
+     "urey_bradley": {
+      "abs_err": 1.3877787807814457e-17,
+      "force_norm_numpy": 29.961228804054915,
+      "force_norm_openmm": 29.961228804054926,
+      "force_norm_rel_err": 3.557311052261995e-16,
+      "numpy": 0.03311025279071281,
+      "openmm": 0.03311025279071282,
+      "rel_err": 4.1913868479153e-16
+     }
+    },
+    "numpy_components": {
+     "angles": 1.1359429821586018,
+     "bonds": 34.5606325363467,
+     "cmaps": 0.0,
+     "coulomb": -209.49827676208858,
+     "impropers": 0.0,
+     "lj": -0.4093354613559793,
+     "lj14": -0.05746360800957823,
+     "lj146": 0.0,
+     "torsions": 4.518716829726712,
+     "urey_bradley": 0.03311025279071281
+    },
+    "skipped": [],
+    "term_counts": {
+     "angles": 7,
+     "bonds": 5,
+     "cmaps": 0,
+     "exclusions": 12,
+     "improper_terms": 0,
+     "pair14": 3,
+     "torsion_terms": 3,
+     "urey_bradley": 3
+    },
+    "total": {
+     "abs_err": 1.1650043092004125e-05,
+     "numpy": -169.7166732304314,
+     "rel_err": 6.864406466699984e-08,
+     "sum_of_classes": -169.7166848804745
+    }
+   },
+   "total": {
+    "energy": -169.71668488047453,
+    "force_absmax": 5013.8619356723975,
+    "force_norm": 7837.369327604743
+   }
+  },
+  {
+   "class_sum": {
+    "energy": -23.278304465054475,
+    "energy_abs_err": 0.0,
+    "energy_rel_err": 0.0,
+    "force_abs_err": 3.266334533691406e-05,
+    "force_rel_err": 4.791108919089277e-11
+   },
+   "classes": {
+    "f0:HarmonicBondForce": {
+     "energy": 137.91727943781666,
+     "force_absmax": 9197.291081806105,
+     "force_norm": 13078.975296020435,
+     "label": "f0:HarmonicBondForce"
+    },
+    "f1:HarmonicAngleForce": {
+     "energy": 52.92946627552562,
+     "force_absmax": 2721.6314345116707,
+     "force_norm": 4608.423055653373,
+     "label": "f1:HarmonicAngleForce"
+    },
+    "f2:HarmonicBondForce": {
+     "energy": 0.04787087862738159,
+     "force_absmax": 13.698303796318827,
+     "force_norm": 25.982692744725384,
+     "label": "f2:HarmonicBondForce"
+    },
+    "f3:PeriodicTorsionForce": {
+     "energy": 4.300685283791571,
+     "force_absmax": 15.563532698788674,
+     "force_norm": 26.2709686394145,
+     "label": "f3:PeriodicTorsionForce"
+    },
+    "f4:CustomTorsionForce": {
+     "energy": 0.0,
+     "force_absmax": 0.0,
+     "force_norm": 0.0,
+     "label": "f4:CustomTorsionForce"
+    },
+    "f5:CMAPTorsionForce": {
+     "energy": 0.0,
+     "force_absmax": 0.0,
+     "force_norm": 0.0,
+     "label": "f5:CMAPTorsionForce"
+    },
+    "f6:NonbondedForce": {
+     "coulomb_energy": -218.0988955022572,
+     "energy": -218.13857268564908,
+     "force_absmax": 540.2677612304688,
+     "force_norm": 850.97107409004,
+     "label": "f6:NonbondedForce",
+     "lj_energy": -0.039677183391870915
+    },
+    "f7:CustomNonbondedForce[12-6]": {
+     "energy": -0.335033655166626,
+     "force_absmax": 2.070162057876587,
+     "force_norm": 3.041414771540054,
+     "label": "f7:CustomNonbondedForce[12-6]"
+    }
+   },
+   "config": 1,
+   "exact": {
+    "classes": {
+     "angles": {
+      "abs_err": 7.815970093361102e-14,
+      "force_norm_numpy": 4608.423055653369,
+      "force_norm_openmm": 4608.423055653373,
+      "force_norm_rel_err": 7.89419452849241e-16,
+      "numpy": 52.92946627552554,
+      "openmm": 52.92946627552562,
+      "rel_err": 1.4766765364069384e-15
+     },
+     "bonds": {
+      "abs_err": 2.842170943040401e-14,
+      "force_norm_numpy": 13078.975296020433,
+      "force_norm_openmm": 13078.975296020435,
+      "force_norm_rel_err": 1.3907736366008153e-16,
+      "numpy": 137.91727943781663,
+      "openmm": 137.91727943781666,
+      "rel_err": 2.0607794430297346e-16
+     },
+     "cmaps": {
+      "abs_err": 0.0,
+      "numpy": 0.0,
+      "openmm": 0.0,
+      "rel_err": 0.0
+     },
+     "coulomb": {
+      "abs_err": 1.862271270169913e-05,
+      "force_norm_numpy": 851.287454699793,
+      "force_norm_openmm": 851.2874171231579,
+      "force_norm_rel_err": 4.414094782573321e-08,
+      "numpy": -218.0989141249699,
+      "openmm": -218.0988955022572,
+      "rel_err": 8.538654479970671e-08
+     },
+     "impropers": {
+      "abs_err": 0.0,
+      "force_norm_numpy": 0.0,
+      "force_norm_openmm": 0.0,
+      "force_norm_rel_err": 0.0,
+      "numpy": 0.0,
+      "openmm": 0.0,
+      "rel_err": 0.0
+     },
+     "lj": {
+      "abs_err": 1.1026027424421159e-08,
+      "force_norm_numpy": 3.0414145649876865,
+      "force_norm_openmm": 3.041414771540054,
+      "force_norm_rel_err": 6.791325194676466e-08,
+      "numpy": -0.33503364414059855,
+      "openmm": -0.335033655166626,
+      "rel_err": 3.29102084354405e-08
+     },
+     "lj14": {
+      "abs_err": 0.0,
+      "force_norm_numpy": 1.1230878574782357,
+      "force_norm_openmm": 1.123087857478236,
+      "force_norm_rel_err": 1.9770902467381922e-16,
+      "numpy": -0.039677183391870915,
+      "openmm": -0.039677183391870915,
+      "rel_err": 0.0
+     },
+     "torsions": {
+      "abs_err": 8.881784197001252e-16,
+      "force_norm_numpy": 26.270968639414516,
+      "force_norm_openmm": 26.2709686394145,
+      "force_norm_rel_err": 5.409337931255934e-16,
+      "numpy": 4.300685283791572,
+      "openmm": 4.300685283791571,
+      "rel_err": 2.065202080811384e-16
+     },
+     "urey_bradley": {
+      "abs_err": 1.3183898417423734e-16,
+      "force_norm_numpy": 25.982692744725437,
+      "force_norm_openmm": 25.982692744725384,
+      "force_norm_rel_err": 2.0510077883604147e-15,
+      "numpy": 0.04787087862738172,
+      "openmm": 0.04787087862738159,
+      "rel_err": 2.754053987612139e-15
+     }
+    },
+    "numpy_components": {
+     "angles": 52.92946627552554,
+     "bonds": 137.91727943781663,
+     "cmaps": 0.0,
+     "coulomb": -218.0989141249699,
+     "impropers": 0.0,
+     "lj": -0.33503364414059855,
+     "lj14": -0.039677183391870915,
+     "lj146": 0.0,
+     "torsions": 4.300685283791572,
+     "urey_bradley": 0.04787087862738172
+    },
+    "skipped": [],
+    "term_counts": {
+     "angles": 7,
+     "bonds": 5,
+     "cmaps": 0,
+     "exclusions": 12,
+     "improper_terms": 0,
+     "pair14": 3,
+     "torsion_terms": 3,
+     "urey_bradley": 3
+    },
+    "total": {
+     "abs_err": 1.8611686780189984e-05,
+     "numpy": -23.278323076741238,
+     "rel_err": 7.995286739011725e-07,
+     "sum_of_classes": -23.278304465054457
+    }
+   },
+   "total": {
+    "energy": -23.278304465054475,
+    "force_absmax": 11893.959408385526,
+    "force_norm": 15896.18604236025
+   }
+  },
+  {
+   "class_sum": {
+    "energy": 607.1143468432364,
+    "energy_abs_err": 1.1368683772161603e-13,
+    "energy_rel_err": 1.8725770246205565e-16,
+    "force_abs_err": 2.1457672119140625e-05,
+    "force_rel_err": 7.271448241932989e-12
+   },
+   "classes": {
+    "f0:HarmonicBondForce": {
+     "energy": 610.7531518265364,
+     "force_absmax": 18677.007269626134,
+     "force_norm": 27197.59167742728,
+     "label": "f0:HarmonicBondForce"
+    },
+    "f1:HarmonicAngleForce": {
+     "energy": 218.29614437838788,
+     "force_absmax": 6716.7168803284385,
+     "force_norm": 9876.603861085026,
+     "label": "f1:HarmonicAngleForce"
+    },
+    "f2:HarmonicBondForce": {
+     "energy": 0.23745288108848336,
+     "force_absmax": 36.16402657498522,
+     "force_norm": 59.22329546296085,
+     "label": "f2:HarmonicBondForce"
+    },
+    "f3:PeriodicTorsionForce": {
+     "energy": 3.8191619982104266,
+     "force_absmax": 37.68423413289319,
+     "force_norm": 50.499497026371856,
+     "label": "f3:PeriodicTorsionForce"
+    },
+    "f4:CustomTorsionForce": {
+     "energy": 0.0,
+     "force_absmax": 0.0,
+     "force_norm": 0.0,
+     "label": "f4:CustomTorsionForce"
+    },
+    "f5:CMAPTorsionForce": {
+     "energy": 0.0,
+     "force_absmax": 0.0,
+     "force_norm": 0.0,
+     "label": "f5:CMAPTorsionForce"
+    },
+    "f6:NonbondedForce": {
+     "coulomb_energy": -225.6775036763956,
+     "energy": -225.70548536323975,
+     "force_absmax": 551.7576904296875,
+     "force_norm": 853.5198377152799,
+     "label": "f6:NonbondedForce",
+     "lj_energy": -0.02798168684416377
+    },
+    "f7:CustomNonbondedForce[12-6]": {
+     "energy": -0.28607887774705887,
+     "force_absmax": 1.8678803443908691,
+     "force_norm": 2.6577583197176295,
+     "label": "f7:CustomNonbondedForce[12-6]"
+    }
+   },
+   "config": 2,
+   "exact": {
+    "classes": {
+     "angles": {
+      "abs_err": 1.1368683772161603e-13,
+      "force_norm_numpy": 9876.603861085017,
+      "force_norm_openmm": 9876.603861085026,
+      "force_norm_rel_err": 9.208577306177518e-16,
+      "numpy": 218.29614437838777,
+      "openmm": 218.29614437838788,
+      "rel_err": 5.207917805664709e-16
+     },
+     "bonds": {
+      "abs_err": 1.1368683772161603e-13,
+      "force_norm_numpy": 27197.591677427274,
+      "force_norm_openmm": 27197.59167742728,
+      "force_norm_rel_err": 2.6752212844720833e-16,
+      "numpy": 610.7531518265363,
+      "openmm": 610.7531518265364,
+      "rel_err": 1.8614204017060054e-16
+     },
+     "cmaps": {
+      "abs_err": 0.0,
+      "numpy": 0.0,
+      "openmm": 0.0,
+      "rel_err": 0.0
+     },
+     "coulomb": {
+      "abs_err": 5.520112128465371e-05,
+      "force_norm_numpy": 853.710086593171,
+      "force_norm_openmm": 853.7099468738857,
+      "force_norm_rel_err": 1.636612798086444e-07,
+      "numpy": -225.67755887751687,
+      "openmm": -225.6775036763956,
+      "rel_err": 2.4460172982734756e-07
+     },
+     "impropers": {
+      "abs_err": 0.0,
+      "force_norm_numpy": 0.0,
+      "force_norm_openmm": 0.0,
+      "force_norm_rel_err": 0.0,
+      "numpy": 0.0,
+      "openmm": 0.0,
+      "rel_err": 0.0
+     },
+     "lj": {
+      "abs_err": 2.0693341595823256e-08,
+      "force_norm_numpy": 2.657758406351199,
+      "force_norm_openmm": 2.6577583197176295,
+      "force_norm_rel_err": 3.259648034389169e-08,
+      "numpy": -0.28607889844040046,
+      "openmm": -0.28607887774705887,
+      "rel_err": 7.233438645295382e-08
+     },
+     "lj14": {
+      "abs_err": 3.8163916471489756e-17,
+      "force_norm_numpy": 0.7498178305620017,
+      "force_norm_openmm": 0.7498178305620005,
+      "force_norm_rel_err": 1.6287227074505913e-15,
+      "numpy": -0.027981686844163807,
+      "openmm": -0.02798168684416377,
+      "rel_err": 1.36388905658308e-15
+     },
+     "torsions": {
+      "abs_err": 0.0,
+      "force_norm_numpy": 50.49949702637202,
+      "force_norm_openmm": 50.499497026371856,
+      "force_norm_rel_err": 3.2361674639943202e-15,
+      "numpy": 3.8191619982104266,
+      "openmm": 3.8191619982104266,
+      "rel_err": 0.0
+     },
+     "urey_bradley": {
+      "abs_err": 5.551115123125783e-17,
+      "force_norm_numpy": 59.22329546296084,
+      "force_norm_openmm": 59.22329546296085,
+      "force_norm_rel_err": 1.1997689932747569e-16,
+      "numpy": 0.2374528810884833,
+      "openmm": 0.23745288108848336,
+      "rel_err": 2.337775434721822e-16
+     }
+    },
+    "numpy_components": {
+     "angles": 218.29614437838777,
+     "bonds": 610.7531518265363,
+     "cmaps": 0.0,
+     "coulomb": -225.67755887751687,
+     "impropers": 0.0,
+     "lj": -0.28607889844040046,
+     "lj14": -0.027981686844163807,
+     "lj146": 0.0,
+     "torsions": 3.8191619982104266,
+     "urey_bradley": 0.2374528810884833
+    },
+    "skipped": [],
+    "term_counts": {
+     "angles": 7,
+     "bonds": 5,
+     "cmaps": 0,
+     "exclusions": 12,
+     "improper_terms": 0,
+     "pair14": 3,
+     "torsion_terms": 3,
+     "urey_bradley": 3
+    },
+    "total": {
+     "abs_err": 5.522181481865118e-05,
+     "numpy": 607.1142916214216,
+     "rel_err": 9.095784855980362e-08,
+     "sum_of_classes": 607.1143468432364
+    }
+   },
+   "total": {
+    "energy": 607.1143468432365,
+    "force_absmax": 25372.73717218196,
+    "force_norm": 33721.899599003205
+   }
+  }
+ ],
+ "counts": {
+  "angles": {
+   "extra": 0,
+   "extra_examples": [],
+   "json": 7,
+   "missing": 0,
+   "missing_examples": [],
+   "parmed": 7
+  },
+  "bonds": {
+   "extra": 0,
+   "extra_examples": [],
+   "json": 5,
+   "missing": 0,
+   "missing_examples": [],
+   "parmed": 5
+  },
+  "cmaps": {
+   "json": 0,
+   "parmed": 0
+  },
+  "dihedrals": {
+   "extra": 0,
+   "extra_examples": [],
+   "json_quartets": 3,
+   "json_terms": 3,
+   "missing": 0,
+   "missing_examples": [],
+   "multiplicity_examples": [],
+   "multiplicity_mismatch": 0,
+   "parmed_quartets": 3,
+   "parmed_terms": 3
+  },
+  "exclusions": {
+   "extra": 0,
+   "extra_examples": [],
+   "json": 12,
+   "missing": 0,
+   "missing_examples": [],
+   "parmed": 12
+  },
+  "impropers": {
+   "extra": 0,
+   "extra_examples": [],
+   "json": 0,
+   "missing": 0,
+   "missing_examples": [],
+   "parmed": 0
+  },
+  "lj146": {
+   "extra": 0,
+   "extra_examples": [],
+   "json": 0,
+   "missing": 0,
+   "missing_examples": [],
+   "parmed": 0
+  },
+  "normalized": {
+   "declarations": [
+    {
+     "code": "nbfix_ignored",
+     "message": "NBFIX/off-diagonal LJ is not supported in schema v1.0.0 (CHARMM NBFIX pairs in this system: CLA-SOD); diagonal per-atom LJ parameters were used because 1 is set",
+     "severity": "warning"
+    }
+   ],
+   "n_atoms": 8,
+   "nbfix_override_used": true,
+   "net_charge": -4.85722573273506e-17,
+   "strict_refusals": [
+    {
+     "mode": "strict",
+     "returncode": 2,
+     "stderr": "error[unsupported_term]: NBFIX/off-diagonal LJ is not supported in schema v1.0.0 (CHARMM NBFIX pairs in this system: CLA-SOD)"
+    }
+   ]
+  },
+  "ok": true,
+  "pair14": {
+   "extra": 0,
+   "extra_examples": [],
+   "json": 3,
+   "missing": 0,
+   "missing_examples": [],
+   "parmed": 3
+  },
+  "urey_bradleys": {
+   "extra": 0,
+   "extra_examples": [],
+   "json": 3,
+   "missing": 0,
+   "missing_examples": [],
+   "parmed": 3
+  },
+  "virtual_sites": {
+   "json": 0,
+   "parmed": 0
+  }
+ },
+ "fixture": "charmm_adapter",
+ "n_atoms": 8,
+ "nbfix_impact": {
+  "abs_error": 0.00775873744612926,
+  "matrix": {
+   "max_relative_deviation": 0.08476097303408268,
+   "pairs_over_1e-8": 1,
+   "used_pairs": 36,
+   "used_types": 6
+  },
+  "normal_pair_lj_lorentz_berthelot": -0.40157672390985005,
+  "normal_pair_lj_parameters": -0.4093354613559793,
+  "rel_error": 0.01895447176852792
+ },
+ "nonbonded_exceptions": [
+  {
+   "count": 15,
+   "label": "f6:NonbondedForce",
+   "particles": 8
+  }
+ ],
+ "periodic": false,
+ "protocol": {
+  "constraints": "none",
+  "cutoff_nm": null,
+  "dispersion_correction": false,
+  "ewald_error_tolerance": null,
+  "nonbonded": "NoCutoff"
+ },
+ "schema": "1.0.0"
+}

@@ -1,0 +1,528 @@
+{
+ "configs": [
+  {
+   "class_sum": {
+    "energy": 42780.460312603434,
+    "energy_abs_err": 0.0,
+    "energy_rel_err": 0.0,
+    "force_abs_err": 0.0030517578125,
+    "force_rel_err": 3.153858106146315e-10
+   },
+   "classes": {
+    "f0:HarmonicBondForce": {
+     "energy": 35356.28847110521,
+     "force_absmax": 10238.98058617804,
+     "force_norm": 207440.77010099625,
+     "label": "f0:HarmonicBondForce"
+    },
+    "f1:HarmonicAngleForce": {
+     "energy": 16359.503700181653,
+     "force_absmax": 7123.669603800924,
+     "force_norm": 61793.990757450694,
+     "label": "f1:HarmonicAngleForce"
+    },
+    "f2:PeriodicTorsionForce": {
+     "energy": 13761.97829826064,
+     "force_absmax": 1570.5438782247381,
+     "force_norm": 14827.463978130007,
+     "label": "f2:PeriodicTorsionForce"
+    },
+    "f3:CustomNonbondedForce[12-6]": {
+     "energy": -5100.793435935135,
+     "force_absmax": 7315.74462890625,
+     "force_norm": 16410.78554080302,
+     "label": "f3:CustomNonbondedForce[12-6]"
+    },
+    "f4:NonbondedForce": {
+     "coulomb_energy": -21032.949550674697,
+     "energy": -17596.516721008935,
+     "force_absmax": 6616.582465302051,
+     "force_norm": 21444.888985114583,
+     "label": "f4:NonbondedForce",
+     "lj_energy": 3436.4328296658555
+    }
+   },
+   "config": 0,
+   "exact": {
+    "classes": {
+     "angles": {
+      "abs_err": 7.275957614183426e-12,
+      "force_norm_numpy": 61793.990757450716,
+      "force_norm_openmm": 61793.990757450694,
+      "force_norm_rel_err": 3.532361735338871e-16,
+      "numpy": 16359.50370018166,
+      "openmm": 16359.503700181653,
+      "rel_err": 4.447541776039717e-16
+     },
+     "bonds": {
+      "abs_err": 9.458744898438454e-11,
+      "force_norm_numpy": 207440.77010099622,
+      "force_norm_openmm": 207440.77010099625,
+      "force_norm_rel_err": 1.4029947171216141e-16,
+      "numpy": 35356.288471105305,
+      "openmm": 35356.28847110521,
+      "rel_err": 2.675265223658459e-15
+     },
+     "coulomb": {
+      "abs_err": 0.010200827895459952,
+      "force_norm_numpy": 15793.545783108035,
+      "force_norm_openmm": 15793.544550500965,
+      "force_norm_rel_err": 7.804498666596771e-08,
+      "numpy": -21032.9393498468,
+      "openmm": -21032.949550674697,
+      "rel_err": 4.849927429761143e-07
+     },
+     "lj": {
+      "abs_err": 0.0038203090662136674,
+      "force_norm_numpy": 16410.78289600616,
+      "force_norm_openmm": 16410.78554080302,
+      "force_norm_rel_err": 1.611621121249667e-07,
+      "numpy": -5100.797256244201,
+      "openmm": -5100.793435935135,
+      "rel_err": 7.489631275850047e-07
+     },
+     "lj14": {
+      "abs_err": 1.3642420526593924e-12,
+      "force_norm_numpy": 13793.54674558032,
+      "force_norm_openmm": 13793.546745580295,
+      "force_norm_rel_err": 1.714342415497521e-15,
+      "numpy": 3436.432829665854,
+      "openmm": 3436.4328296658555,
+      "rel_err": 3.969936618234571e-16
+     },
+     "torsions": {
+      "abs_err": 3.8198777474462986e-11,
+      "force_norm_numpy": 14827.463978130114,
+      "force_norm_openmm": 14827.463978130007,
+      "force_norm_rel_err": 7.237945407758102e-15,
+      "numpy": 13761.978298260601,
+      "openmm": 13761.97829826064,
+      "rel_err": 2.7756748809356055e-15
+     }
+    },
+    "numpy_components": {
+     "angles": 16359.50370018166,
+     "bonds": 35356.288471105305,
+     "cmaps": 0.0,
+     "coulomb": -21032.9393498468,
+     "impropers": 0.0,
+     "lj": -5100.797256244201,
+     "lj14": 3436.432829665854,
+     "lj146": 0.0,
+     "torsions": 13761.978298260601,
+     "urey_bradley": 0.0
+    },
+    "skipped": [],
+    "term_counts": {
+     "angles": 4748,
+     "bonds": 2635,
+     "cmaps": 0,
+     "exclusions": 7383,
+     "improper_terms": 0,
+     "pair14": 6838,
+     "torsion_terms": 10268,
+     "urey_bradley": 0
+    },
+    "total": {
+     "abs_err": 0.006380518891091924,
+     "numpy": 42780.46669312242,
+     "rel_err": 1.4914561210520139e-07,
+     "sum_of_classes": 42780.46031260353
+    }
+   },
+   "total": {
+    "energy": 42780.460312603434,
+    "force_absmax": 13751.46569680516,
+    "force_norm": 226763.18302746926
+   }
+  },
+  {
+   "class_sum": {
+    "energy": 131328.25185536285,
+    "energy_abs_err": 2.9103830456733704e-11,
+    "energy_rel_err": 2.216113444408514e-16,
+    "force_abs_err": 0.006240844728381489,
+    "force_rel_err": 1.5683700851563095e-10
+   },
+   "classes": {
+    "f0:HarmonicBondForce": {
+     "energy": 97298.28802060234,
+     "force_absmax": 21092.421302468316,
+     "force_norm": 349026.6453698793,
+     "label": "f0:HarmonicBondForce"
+    },
+    "f1:HarmonicAngleForce": {
+     "energy": 35040.92822336812,
+     "force_absmax": 7855.997043945551,
+     "force_norm": 113933.71997149967,
+     "label": "f1:HarmonicAngleForce"
+    },
+    "f2:PeriodicTorsionForce": {
+     "energy": 15043.00232368268,
+     "force_absmax": 2469.759243309808,
+     "force_norm": 23142.46622323367,
+     "label": "f2:PeriodicTorsionForce"
+    },
+    "f3:CustomNonbondedForce[12-6]": {
+     "energy": -2114.7785005340484,
+     "force_absmax": 10608.0625,
+     "force_norm": 33784.059204669546,
+     "label": "f3:CustomNonbondedForce[12-6]"
+    },
+    "f4:NonbondedForce": {
+     "coulomb_energy": -20997.938813964916,
+     "energy": -13939.188211756242,
+     "force_absmax": 28414.26798212259,
+     "force_norm": 58517.965880651216,
+     "label": "f4:NonbondedForce",
+     "lj_energy": 7058.750602208563
+    }
+   },
+   "config": 1,
+   "exact": {
+    "classes": {
+     "angles": {
+      "abs_err": 3.637978807091713e-11,
+      "force_norm_numpy": 113933.71997149964,
+      "force_norm_openmm": 113933.71997149967,
+      "force_norm_rel_err": 2.5544527523558414e-16,
+      "numpy": 35040.92822336816,
+      "openmm": 35040.92822336812,
+      "rel_err": 1.0382084583779979e-15
+     },
+     "bonds": {
+      "abs_err": 1.1641532182693481e-10,
+      "force_norm_numpy": 349026.64536987926,
+      "force_norm_openmm": 349026.6453698793,
+      "force_norm_rel_err": 1.6677139606857843e-16,
+      "numpy": 97298.28802060222,
+      "openmm": 97298.28802060234,
+      "rel_err": 1.1964786246011292e-15
+     },
+     "coulomb": {
+      "abs_err": 0.004173827514023287,
+      "force_norm_numpy": 16384.796889151985,
+      "force_norm_openmm": 16384.796055676976,
+      "force_norm_rel_err": 5.086880324299932e-08,
+      "numpy": -20997.94298779243,
+      "openmm": -20997.938813964916,
+      "rel_err": 1.9877316156396007e-07
+     },
+     "lj": {
+      "abs_err": 0.012421229235769715,
+      "force_norm_numpy": 33784.000789034544,
+      "force_norm_openmm": 33784.059204669546,
+      "force_norm_rel_err": 1.7290886997191901e-06,
+      "numpy": -2114.790921763284,
+      "openmm": -2114.7785005340484,
+      "rel_err": 5.87350224929709e-06
+     },
+     "lj14": {
+      "abs_err": 8.185452315956354e-12,
+      "force_norm_numpy": 55716.89890529602,
+      "force_norm_openmm": 55716.898905296046,
+      "force_norm_rel_err": 5.223519439982204e-16,
+      "numpy": 7058.7506022085545,
+      "openmm": 7058.750602208563,
+      "rel_err": 1.15961772518146e-15
+     },
+     "torsions": {
+      "abs_err": 2.3646862246096134e-11,
+      "force_norm_numpy": 23142.466223233718,
+      "force_norm_openmm": 23142.46622323367,
+      "force_norm_rel_err": 2.0435905160666094e-15,
+      "numpy": 15043.002323682704,
+      "openmm": 15043.00232368268,
+      "rel_err": 1.5719509800824855e-15
+     }
+    },
+    "numpy_components": {
+     "angles": 35040.92822336816,
+     "bonds": 97298.28802060222,
+     "cmaps": 0.0,
+     "coulomb": -20997.94298779243,
+     "impropers": 0.0,
+     "lj": -2114.790921763284,
+     "lj14": 7058.7506022085545,
+     "lj146": 0.0,
+     "torsions": 15043.002323682704,
+     "urey_bradley": 0.0
+    },
+    "skipped": [],
+    "term_counts": {
+     "angles": 4748,
+     "bonds": 2635,
+     "cmaps": 0,
+     "exclusions": 7383,
+     "improper_terms": 0,
+     "pair14": 6838,
+     "torsion_terms": 10268,
+     "urey_bradley": 0
+    },
+    "total": {
+     "abs_err": 0.016595056804362684,
+     "numpy": 131328.23526030593,
+     "rel_err": 1.2636318971670703e-07,
+     "sum_of_classes": 131328.25185536273
+    }
+   },
+   "total": {
+    "energy": 131328.25185536288,
+    "force_absmax": 33601.52948004295,
+    "force_norm": 389632.0855783231
+   }
+  },
+  {
+   "class_sum": {
+    "energy": 442906.33948032063,
+    "energy_abs_err": 0.0,
+    "energy_rel_err": 0.0,
+    "force_abs_err": 0.23272705078125,
+    "force_rel_err": 3.731199815704099e-08
+   },
+   "classes": {
+    "f0:HarmonicBondForce": {
+     "energy": 286404.3794757414,
+     "force_absmax": 39371.59738636565,
+     "force_norm": 602798.9084982667,
+     "label": "f0:HarmonicBondForce"
+    },
+    "f1:HarmonicAngleForce": {
+     "energy": 89036.77602161198,
+     "force_absmax": 16916.961695218983,
+     "force_norm": 192196.40352403538,
+     "label": "f1:HarmonicAngleForce"
+    },
+    "f2:PeriodicTorsionForce": {
+     "energy": 18984.51033472931,
+     "force_absmax": 8431.989893006721,
+     "force_norm": 39344.788310383694,
+     "label": "f2:PeriodicTorsionForce"
+    },
+    "f3:CustomNonbondedForce[12-6]": {
+     "energy": 25370.609529243266,
+     "force_absmax": 388848.90625,
+     "force_norm": 626920.8799014555,
+     "label": "f3:CustomNonbondedForce[12-6]"
+    },
+    "f4:NonbondedForce": {
+     "coulomb_energy": -20967.143608173305,
+     "energy": 23110.064118994647,
+     "force_absmax": 859268.5259490492,
+     "force_norm": 1438798.7201153205,
+     "label": "f4:NonbondedForce",
+     "lj_energy": 44077.20772716803
+    }
+   },
+   "config": 2,
+   "exact": {
+    "classes": {
+     "angles": {
+      "abs_err": 7.275957614183426e-11,
+      "force_norm_numpy": 192196.40352403533,
+      "force_norm_openmm": 192196.40352403538,
+      "force_norm_rel_err": 3.028550995034003e-16,
+      "numpy": 89036.77602161205,
+      "openmm": 89036.77602161198,
+      "rel_err": 8.171856551069774e-16
+     },
+     "bonds": {
+      "abs_err": 7.566995918750763e-10,
+      "force_norm_numpy": 602798.9084982666,
+      "force_norm_openmm": 602798.9084982667,
+      "force_norm_rel_err": 1.931246393875472e-16,
+      "numpy": 286404.37947574066,
+      "openmm": 286404.3794757414,
+      "rel_err": 2.6420671124519908e-15
+     },
+     "coulomb": {
+      "abs_err": 0.0024026230021263473,
+      "force_norm_numpy": 18083.68445486975,
+      "force_norm_openmm": 18083.684498150924,
+      "force_norm_rel_err": 2.393382394809549e-09,
+      "numpy": -20967.146010796307,
+      "openmm": -20967.143608173305,
+      "rel_err": 1.145898922480532e-07
+     },
+     "lj": {
+      "abs_err": 0.16805857680810732,
+      "force_norm_numpy": 626917.9271695653,
+      "force_norm_openmm": 626920.8799014555,
+      "force_norm_rel_err": 4.709895594165524e-06,
+      "numpy": 25370.441470666457,
+      "openmm": 25370.609529243266,
+      "rel_err": 6.624144233286776e-06
+     },
+     "lj14": {
+      "abs_err": 5.820766091346741e-11,
+      "force_norm_numpy": 1438626.369628827,
+      "force_norm_openmm": 1438626.369628826,
+      "force_norm_rel_err": 8.092116499781007e-16,
+      "numpy": 44077.207727167974,
+      "openmm": 44077.20772716803,
+      "rel_err": 1.3205841276009354e-15
+     },
+     "torsions": {
+      "abs_err": 2.9103830456733704e-11,
+      "force_norm_numpy": 39344.788310383665,
+      "force_norm_openmm": 39344.788310383694,
+      "force_norm_rel_err": 7.397124678150259e-16,
+      "numpy": 18984.510334729282,
+      "openmm": 18984.51033472931,
+      "rel_err": 1.533030346507943e-15
+     }
+    },
+    "numpy_components": {
+     "angles": 89036.77602161205,
+     "bonds": 286404.37947574066,
+     "cmaps": 0.0,
+     "coulomb": -20967.146010796307,
+     "impropers": 0.0,
+     "lj": 25370.441470666457,
+     "lj14": 44077.207727167974,
+     "lj146": 0.0,
+     "torsions": 18984.510334729282,
+     "urey_bradley": 0.0
+    },
+    "skipped": [],
+    "term_counts": {
+     "angles": 4748,
+     "bonds": 2635,
+     "cmaps": 0,
+     "exclusions": 7383,
+     "improper_terms": 0,
+     "pair14": 6838,
+     "torsion_terms": 10268,
+     "urey_bradley": 0
+    },
+    "total": {
+     "abs_err": 0.17046120058512315,
+     "numpy": 442906.1690191201,
+     "rel_err": 3.848696335779071e-07,
+     "sum_of_classes": 442906.3394803207
+    }
+   },
+   "total": {
+    "energy": 442906.33948032063,
+    "force_absmax": 872019.2925966319,
+    "force_norm": 1729811.1881783486
+   }
+  }
+ ],
+ "counts": {
+  "angles": {
+   "extra": 0,
+   "extra_examples": [],
+   "json": 4748,
+   "missing": 0,
+   "missing_examples": [],
+   "parmed": 4748
+  },
+  "bonds": {
+   "extra": 0,
+   "extra_examples": [],
+   "json": 2635,
+   "missing": 0,
+   "missing_examples": [],
+   "parmed": 2635
+  },
+  "cmaps": {
+   "json": 0,
+   "parmed": 0
+  },
+  "dihedrals": {
+   "extra": 0,
+   "extra_examples": [],
+   "json_quartets": 7448,
+   "json_terms": 10268,
+   "missing": 0,
+   "missing_examples": [],
+   "multiplicity_examples": [],
+   "multiplicity_mismatch": 0,
+   "parmed_quartets": 7448,
+   "parmed_terms": 10268
+  },
+  "exclusions": {
+   "extra": 0,
+   "extra_examples": [],
+   "json": 7383,
+   "missing": 0,
+   "missing_examples": [],
+   "parmed": 7383
+  },
+  "impropers": {
+   "extra": 0,
+   "extra_examples": [],
+   "json": 0,
+   "missing": 0,
+   "missing_examples": [],
+   "parmed": 0
+  },
+  "lj146": {
+   "extra": 0,
+   "extra_examples": [],
+   "json": 0,
+   "missing": 0,
+   "missing_examples": [],
+   "parmed": 0
+  },
+  "normalized": {
+   "declarations": [],
+   "n_atoms": 2615,
+   "nbfix_override_used": false,
+   "net_charge": 7.999999925914954,
+   "strict_refusals": []
+  },
+  "ok": true,
+  "pair14": {
+   "extra": 0,
+   "extra_examples": [],
+   "json": 6838,
+   "missing": 0,
+   "missing_examples": [],
+   "parmed": 6838
+  },
+  "urey_bradleys": {
+   "extra": 0,
+   "extra_examples": [],
+   "json": 0,
+   "missing": 0,
+   "missing_examples": [],
+   "parmed": 0
+  },
+  "virtual_sites": {
+   "json": 0,
+   "parmed": 0
+  }
+ },
+ "fixture": "protein_ligand",
+ "n_atoms": 2615,
+ "nbfix_impact": {
+  "abs_error": 8.511351552442648e-07,
+  "matrix": {
+   "max_relative_deviation": 5.6611706651679e-09,
+   "pairs_over_1e-8": 0,
+   "used_pairs": 324,
+   "used_types": 18
+  },
+  "normal_pair_lj_lorentz_berthelot": -5100.797255393066,
+  "normal_pair_lj_parameters": -5100.797256244201,
+  "rel_error": 1.668631612837263e-10
+ },
+ "nonbonded_exceptions": [
+  {
+   "count": 14221,
+   "label": "f4:NonbondedForce",
+   "particles": 2615
+  }
+ ],
+ "periodic": false,
+ "protocol": {
+  "constraints": "none",
+  "cutoff_nm": null,
+  "dispersion_correction": false,
+  "ewald_error_tolerance": null,
+  "nonbonded": "NoCutoff"
+ },
+ "schema": "1.0.0"
+}

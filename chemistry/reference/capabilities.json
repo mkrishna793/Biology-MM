@@ -1,0 +1,303 @@
+{
+  "generated_at": "2026-11-13T07:21:11Z",
+  "generator": "chemistry/tools/register_fixture.py",
+  "schema": "1.0.0",
+  "scope": "Phase-2 capability boundary (mdparams 1.0.0); Phase 3+ is in EXTENDING.md",
+  "status_legend": {
+    "partial": "implemented only on the stated narrow path",
+    "refused": "typed error instead of an approximation",
+    "supported": "implemented and exercised by the fixture suite"
+  },
+  "terms": [
+    {
+      "evidence": [
+        "julia/src/ChemistryBuild.jl"
+      ],
+      "family": "amber",
+      "notes": "k/2 (theta-theta0)^2",
+      "owner": "Factors.HarmonicAngle",
+      "status": "supported",
+      "term": "angles"
+    },
+    {
+      "evidence": [
+        "julia/src/ChemistryBuild.jl"
+      ],
+      "family": "amber",
+      "notes": "k/2 (r-r0)^2; prmtop K doubled",
+      "owner": "Factors.HarmonicBond",
+      "status": "supported",
+      "term": "bonds"
+    },
+    {
+      "evidence": [
+        "julia/src/ChemistryBuild.jl"
+      ],
+      "family": "amber",
+      "notes": "flat periodic grid M[s + n*t]",
+      "owner": "ChemistryCMAP.CMAPCorrection",
+      "status": "supported",
+      "term": "cmap"
+    },
+    {
+      "evidence": [
+        "julia/src/ChemistrySchema.jl"
+      ],
+      "family": "amber",
+      "notes": "explicit zero-interaction pairs",
+      "owner": "ChemistrySchema exclusions",
+      "status": "supported",
+      "term": "exclusions_1_2_1_3"
+    },
+    {
+      "evidence": [
+        "julia/src/ChemistryBuild.jl"
+      ],
+      "family": "amber",
+      "notes": "only via CHARMM_IMPROPERS (ChamberParm)",
+      "owner": "ChemistryFactors.HarmonicImproper",
+      "status": "partial",
+      "term": "harmonic_improper"
+    },
+    {
+      "evidence": [
+        "julia/src/ChemistryBuild.jl"
+      ],
+      "family": "amber",
+      "notes": "LENNARD_JONES_CCOEF",
+      "owner": "ChemistryFactors.PairC64Table",
+      "status": "supported",
+      "term": "lj_1_6_4_minus_C_over_r4"
+    },
+    {
+      "evidence": [
+        "chemistry/tools/extract_amber.py"
+      ],
+      "family": "amber",
+      "notes": "hard refusal by default",
+      "owner": "extract_amber.check_nbfix",
+      "status": "refused",
+      "term": "nbfix"
+    },
+    {
+      "evidence": [
+        "julia/src/MonteCarloBarostat.jl"
+      ],
+      "family": "amber",
+      "notes": "isotropic volume move only",
+      "owner": "MonteCarloBarostat.jl",
+      "status": "partial",
+      "term": "npt_isotropic"
+    },
+    {
+      "evidence": [
+        "julia/src/ChemistryBuild.jl"
+      ],
+      "family": "amber",
+      "notes": "sCoul/sLJ on the full pair",
+      "owner": "ChemistryFactors.PairTableNonbonded",
+      "status": "supported",
+      "term": "pair14_scaling"
+    },
+    {
+      "evidence": [
+        "julia/src/PME.jl"
+      ],
+      "family": "amber",
+      "notes": "scalar-charge PME, orthorhombic",
+      "owner": "PME.jl",
+      "status": "supported",
+      "term": "pme"
+    },
+    {
+      "evidence": [
+        "julia/src/ChemistryBuild.jl"
+      ],
+      "family": "amber",
+      "notes": "one entry per quadruple",
+      "owner": "ChemistryFactors.MultiPeriodicDihedral",
+      "status": "supported",
+      "term": "proper_torsion_multiterm"
+    },
+    {
+      "evidence": [
+        "chemistry/tools/extract_amber.py"
+      ],
+      "family": "amber",
+      "notes": "HBOND_ACOEF/BCOEF refused",
+      "owner": "extract_amber.check_hbond",
+      "status": "refused",
+      "term": "ten_twelve_hbond"
+    },
+    {
+      "evidence": [
+        "julia/src/ChemistryBuild.jl"
+      ],
+      "family": "amber",
+      "notes": "imported, never flattened",
+      "owner": "ChemistryBuild.build_resolved",
+      "status": "refused",
+      "term": "triclinic_nonbonded"
+    },
+    {
+      "evidence": [
+        "julia/src/ChemistryBuild.jl"
+      ],
+      "family": "amber",
+      "notes": "empty for plain AMBER prmtops",
+      "owner": "ChemistryFactors.UreyBradley",
+      "status": "supported",
+      "term": "urey_bradley"
+    },
+    {
+      "evidence": [
+        "julia/src/SystemContract.jl"
+      ],
+      "family": "amber",
+      "notes": "carried, execution refused",
+      "owner": "SystemContract._refuse_virtual_sites",
+      "status": "refused",
+      "term": "virtual_sites"
+    },
+    {
+      "evidence": [
+        "julia/src/ChemistryBuild.jl"
+      ],
+      "family": "charmm",
+      "notes": "k/2 (theta-theta0)^2",
+      "owner": "Factors.HarmonicAngle",
+      "status": "supported",
+      "term": "angles"
+    },
+    {
+      "evidence": [
+        "julia/src/ChemistryBuild.jl"
+      ],
+      "family": "charmm",
+      "notes": "k/2 (r-r0)^2; prmtop K doubled",
+      "owner": "Factors.HarmonicBond",
+      "status": "supported",
+      "term": "bonds"
+    },
+    {
+      "evidence": [
+        "julia/src/ChemistryBuild.jl"
+      ],
+      "family": "charmm",
+      "notes": "flat periodic grid M[s + n*t]",
+      "owner": "ChemistryCMAP.CMAPCorrection",
+      "status": "supported",
+      "term": "cmap"
+    },
+    {
+      "evidence": [
+        "julia/src/ChemistrySchema.jl"
+      ],
+      "family": "charmm",
+      "notes": "explicit zero-interaction pairs",
+      "owner": "ChemistrySchema exclusions",
+      "status": "supported",
+      "term": "exclusions_1_2_1_3"
+    },
+    {
+      "evidence": [
+        "julia/src/ChemistryBuild.jl"
+      ],
+      "family": "charmm",
+      "notes": "PSF psi_k/psi_eq",
+      "owner": "ChemistryFactors.HarmonicImproper",
+      "status": "supported",
+      "term": "harmonic_improper"
+    },
+    {
+      "evidence": [
+        "chemistry/tools/extract_charmm.py"
+      ],
+      "family": "charmm",
+      "notes": "no CHARMM 1-6-4 term exists",
+      "owner": "extract_charmm.py",
+      "status": "refused",
+      "term": "lj_1_6_4_minus_C_over_r4"
+    },
+    {
+      "evidence": [
+        "chemistry/tools/extract_amber.py"
+      ],
+      "family": "charmm",
+      "notes": "hard refusal by default",
+      "owner": "extract_amber.check_nbfix",
+      "status": "refused",
+      "term": "nbfix"
+    },
+    {
+      "evidence": [
+        "julia/src/MonteCarloBarostat.jl"
+      ],
+      "family": "charmm",
+      "notes": "isotropic volume move only",
+      "owner": "MonteCarloBarostat.jl",
+      "status": "partial",
+      "term": "npt_isotropic"
+    },
+    {
+      "evidence": [
+        "julia/src/ChemistryBuild.jl"
+      ],
+      "family": "charmm",
+      "notes": "sCoul/sLJ on the full pair",
+      "owner": "ChemistryFactors.PairTableNonbonded",
+      "status": "supported",
+      "term": "pair14_scaling"
+    },
+    {
+      "evidence": [
+        "julia/src/PME.jl"
+      ],
+      "family": "charmm",
+      "notes": "scalar-charge PME, orthorhombic",
+      "owner": "PME.jl",
+      "status": "supported",
+      "term": "pme"
+    },
+    {
+      "evidence": [
+        "julia/src/ChemistryBuild.jl"
+      ],
+      "family": "charmm",
+      "notes": "one entry per quadruple",
+      "owner": "ChemistryFactors.MultiPeriodicDihedral",
+      "status": "supported",
+      "term": "proper_torsion_multiterm"
+    },
+    {
+      "evidence": [
+        "julia/src/ChemistryBuild.jl"
+      ],
+      "family": "charmm",
+      "notes": "imported, never flattened",
+      "owner": "ChemistryBuild.build_resolved",
+      "status": "refused",
+      "term": "triclinic_nonbonded"
+    },
+    {
+      "evidence": [
+        "julia/src/ChemistryBuild.jl"
+      ],
+      "family": "charmm",
+      "notes": "empty for plain AMBER prmtops",
+      "owner": "ChemistryFactors.UreyBradley",
+      "status": "supported",
+      "term": "urey_bradley"
+    },
+    {
+      "evidence": [
+        "chemistry/tools/extract_charmm.py"
+      ],
+      "family": "charmm",
+      "notes": "refused at extraction",
+      "owner": "extract_charmm.py massless-atom gate",
+      "status": "refused",
+      "term": "virtual_sites"
+    }
+  ]
+}

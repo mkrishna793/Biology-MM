@@ -1,0 +1,483 @@
+{
+ "configs": [
+  {
+   "class_sum": {
+    "energy": 18227.86962237591,
+    "energy_abs_err": 0.0,
+    "energy_rel_err": 0.0,
+    "force_abs_err": 7.275957614183426e-12,
+    "force_rel_err": 0.0
+   },
+   "classes": {
+    "f0:HarmonicBondForce": {
+     "energy": 10139.621037086288,
+     "force_absmax": 12030.637178346486,
+     "force_norm": 88434.4847104285,
+     "label": "f0:HarmonicBondForce"
+    },
+    "f1:HarmonicAngleForce": {
+     "energy": 3523.289570393638,
+     "force_absmax": 3984.0046414608755,
+     "force_norm": 32471.222244307788,
+     "label": "f1:HarmonicAngleForce"
+    },
+    "f2:PeriodicTorsionForce": {
+     "energy": 2486.051121127791,
+     "force_absmax": 338.74076246634195,
+     "force_norm": 2570.012562509372,
+     "label": "f2:PeriodicTorsionForce"
+    },
+    "f3:NonbondedForce": {
+     "coulomb_energy": -2437.0174910009882,
+     "energy": 2078.9078937681934,
+     "force_absmax": 36900.27745346977,
+     "force_norm": 153398.61229935155,
+     "label": "f3:NonbondedForce",
+     "lj_energy": 4515.918994883016
+    }
+   },
+   "config": 0,
+   "exact": {
+    "classes": {
+     "angles": {
+      "abs_err": 4.547473508864641e-13,
+      "force_norm_numpy": 32471.222244307788,
+      "force_norm_openmm": 32471.222244307788,
+      "force_norm_rel_err": 0.0,
+      "numpy": 3523.2895703936374,
+      "openmm": 3523.289570393638,
+      "rel_err": 1.2906896858768769e-16
+     },
+     "bonds": {
+      "abs_err": 1.2732925824820995e-11,
+      "force_norm_numpy": 88434.48471042847,
+      "force_norm_openmm": 88434.4847104285,
+      "force_norm_rel_err": 3.2910046970965933e-16,
+      "numpy": 10139.621037086275,
+      "openmm": 10139.621037086288,
+      "rel_err": 1.2557595375852346e-15
+     },
+     "coulomb": {
+      "abs_err": 0.0016152560087903112,
+      "force_norm_numpy": 11637.787338781582,
+      "force_norm_openmm": 11637.786360392067,
+      "force_norm_rel_err": 8.40700630028205e-08,
+      "numpy": -2437.0158757449794,
+      "openmm": -2437.0174910009882,
+      "rel_err": 6.628003347349205e-07
+     },
+     "lj": {
+      "abs_err": 0.006325273813672538,
+      "force_norm_numpy": 154190.0073417662,
+      "force_norm_openmm": 154190.09335894973,
+      "force_norm_rel_err": 5.578645271501414e-07,
+      "numpy": 4515.912669609203,
+      "openmm": 4515.918994883016,
+      "rel_err": 1.400661486806938e-06
+     },
+     "torsions": {
+      "abs_err": 2.7284841053187847e-12,
+      "force_norm_numpy": 2570.012562505953,
+      "force_norm_openmm": 2570.012562509372,
+      "force_norm_rel_err": 1.3302622072112809e-12,
+      "numpy": 2486.0511211277935,
+      "openmm": 2486.051121127791,
+      "rel_err": 1.0975172964588965e-15
+     }
+    },
+    "numpy_components": {
+     "angles": 3523.2895703936374,
+     "bonds": 10139.621037086275,
+     "cmaps": 0.0,
+     "coulomb": -2437.0158757449794,
+     "impropers": 0.0,
+     "lj": 3589.6966030010535,
+     "lj14": 926.2160666081487,
+     "lj146": 0.0,
+     "torsions": 2486.0511211277935,
+     "urey_bradley": 0.0
+    },
+    "skipped": [],
+    "term_counts": {
+     "angles": 1218,
+     "bonds": 676,
+     "cmaps": 0,
+     "exclusions": 1894,
+     "improper_terms": 0,
+     "pair14": 1578,
+     "torsion_terms": 2500,
+     "urey_bradley": 0
+    },
+    "total": {
+     "abs_err": 0.004710017816250911,
+     "numpy": 18227.858522471928,
+     "rel_err": 2.5839659625356807e-07,
+     "sum_of_classes": 18227.863232489744
+    }
+   },
+   "total": {
+    "energy": 18227.86962237591,
+    "force_absmax": 41095.23812980349,
+    "force_norm": 180585.6430134842
+   }
+  },
+  {
+   "class_sum": {
+    "energy": 74384.94931618264,
+    "energy_abs_err": 0.0,
+    "energy_rel_err": 0.0,
+    "force_abs_err": 2.3283064365386963e-10,
+    "force_rel_err": 0.0
+   },
+   "classes": {
+    "f0:HarmonicBondForce": {
+     "energy": 22446.643170868192,
+     "force_absmax": 17819.55230860791,
+     "force_norm": 152508.25090953856,
+     "label": "f0:HarmonicBondForce"
+    },
+    "f1:HarmonicAngleForce": {
+     "energy": 7558.7699664418715,
+     "force_absmax": 8276.984820805417,
+     "force_norm": 58956.46666367593,
+     "label": "f1:HarmonicAngleForce"
+    },
+    "f2:PeriodicTorsionForce": {
+     "energy": 2933.7964462937,
+     "force_absmax": 2513.165471359041,
+     "force_norm": 11610.775747550273,
+     "label": "f2:PeriodicTorsionForce"
+    },
+    "f3:NonbondedForce": {
+     "coulomb_energy": -2693.113210910291,
+     "energy": 41445.73973257887,
+     "force_absmax": 1163724.484644695,
+     "force_norm": 2626738.43037864,
+     "label": "f3:NonbondedForce",
+     "lj_energy": 44138.90711320361
+    }
+   },
+   "config": 1,
+   "exact": {
+    "classes": {
+     "angles": {
+      "abs_err": 6.366462912410498e-12,
+      "force_norm_numpy": 58956.46666367593,
+      "force_norm_openmm": 58956.46666367593,
+      "force_norm_rel_err": 0.0,
+      "numpy": 7558.769966441865,
+      "openmm": 7558.7699664418715,
+      "rel_err": 8.422617622543384e-16
+     },
+     "bonds": {
+      "abs_err": 3.637978807091713e-12,
+      "force_norm_numpy": 152508.2509095385,
+      "force_norm_openmm": 152508.25090953856,
+      "force_norm_rel_err": 3.816689298206805e-16,
+      "numpy": 22446.643170868196,
+      "openmm": 22446.643170868192,
+      "rel_err": 1.6207228757541668e-16
+     },
+     "coulomb": {
+      "abs_err": 0.008114540094084077,
+      "force_norm_numpy": 11781.113797484879,
+      "force_norm_openmm": 11781.112917085218,
+      "force_norm_rel_err": 7.472974761188937e-08,
+      "numpy": -2693.121325450385,
+      "openmm": -2693.113210910291,
+      "rel_err": 3.0130614678961927e-06
+     },
+     "lj": {
+      "abs_err": 0.09605269880557898,
+      "force_norm_numpy": 2627860.7993900767,
+      "force_norm_openmm": 2627864.8870987925,
+      "force_norm_rel_err": 1.5555246907416146e-06,
+      "numpy": 44138.811060504806,
+      "openmm": 44138.90711320361,
+      "rel_err": 2.1761458334079594e-06
+     },
+     "torsions": {
+      "abs_err": 2.7284841053187847e-12,
+      "force_norm_numpy": 11610.775747548103,
+      "force_norm_openmm": 11610.775747550273,
+      "force_norm_rel_err": 1.8690003197142626e-13,
+      "numpy": 2933.7964462937025,
+      "openmm": 2933.7964462937,
+      "rel_err": 9.300182051708832e-16
+     }
+    },
+    "numpy_components": {
+     "angles": 7558.769966441865,
+     "bonds": 22446.643170868196,
+     "cmaps": 0.0,
+     "coulomb": -2693.121325450385,
+     "impropers": 0.0,
+     "lj": 41554.388635165975,
+     "lj14": 2584.4224253388334,
+     "lj146": 0.0,
+     "torsions": 2933.7964462937025,
+     "urey_bradley": 0.0
+    },
+    "skipped": [],
+    "term_counts": {
+     "angles": 1218,
+     "bonds": 676,
+     "cmaps": 0,
+     "exclusions": 1894,
+     "improper_terms": 0,
+     "pair14": 1578,
+     "torsion_terms": 2500,
+     "urey_bradley": 0
+    },
+    "total": {
+     "abs_err": 0.10416723889647983,
+     "numpy": 74384.8993186582,
+     "rel_err": 1.400379565972989e-06,
+     "sum_of_classes": 74385.00348589709
+    }
+   },
+   "total": {
+    "energy": 74384.94931618264,
+    "force_absmax": 1168868.13398494,
+    "force_norm": 2638806.691496726
+   }
+  },
+  {
+   "class_sum": {
+    "energy": 1309423.4272738264,
+    "energy_abs_err": 0.0,
+    "energy_rel_err": 0.0,
+    "force_abs_err": 9.313225746154785e-10,
+    "force_rel_err": 0.0
+   },
+   "classes": {
+    "f0:HarmonicBondForce": {
+     "energy": 57062.034564751855,
+     "force_absmax": 30187.110646543104,
+     "force_norm": 261899.84902696408,
+     "label": "f0:HarmonicBondForce"
+    },
+    "f1:HarmonicAngleForce": {
+     "energy": 19899.413192719014,
+     "force_absmax": 21976.887710919513,
+     "force_norm": 106278.4390183245,
+     "label": "f1:HarmonicAngleForce"
+    },
+    "f2:PeriodicTorsionForce": {
+     "energy": 4340.099195713106,
+     "force_absmax": 5576.522723027106,
+     "force_norm": 22442.915708397628,
+     "label": "f2:PeriodicTorsionForce"
+    },
+    "f3:NonbondedForce": {
+     "coulomb_energy": -3011.2223895958796,
+     "energy": 1228121.8803206424,
+     "force_absmax": 85099565.0734881,
+     "force_norm": 138363944.96880597,
+     "label": "f3:NonbondedForce",
+     "lj_energy": 1231134.0324648828
+    }
+   },
+   "config": 2,
+   "exact": {
+    "classes": {
+     "angles": {
+      "abs_err": 2.546585164964199e-11,
+      "force_norm_numpy": 106278.4390183245,
+      "force_norm_openmm": 106278.4390183245,
+      "force_norm_rel_err": 0.0,
+      "numpy": 19899.41319271899,
+      "openmm": 19899.413192719014,
+      "rel_err": 1.2797287740605174e-15
+     },
+     "bonds": {
+      "abs_err": 7.275957614183426e-12,
+      "force_norm_numpy": 261899.84902696402,
+      "force_norm_openmm": 261899.84902696408,
+      "force_norm_rel_err": 2.222516016321743e-16,
+      "numpy": 57062.03456475186,
+      "openmm": 57062.034564751855,
+      "rel_err": 1.2750960721400392e-16
+     },
+     "coulomb": {
+      "abs_err": 0.00032191579975915374,
+      "force_norm_numpy": 12453.266463403168,
+      "force_norm_openmm": 12453.26555868671,
+      "force_norm_rel_err": 7.264892798962622e-08,
+      "numpy": -3011.2227115116793,
+      "openmm": -3011.2223895958796,
+      "rel_err": 1.0690534397488891e-07
+     },
+     "lj": {
+      "abs_err": 0.3913468362297863,
+      "force_norm_numpy": 138365761.4701578,
+      "force_norm_openmm": 138365607.11311856,
+      "force_norm_rel_err": 1.1155725058201916e-06,
+      "numpy": 1231133.6411180466,
+      "openmm": 1231134.0324648828,
+      "rel_err": 3.178750858233213e-07
+     },
+     "torsions": {
+      "abs_err": 9.094947017729282e-13,
+      "force_norm_numpy": 22442.91570839763,
+      "force_norm_openmm": 22442.915708397628,
+      "force_norm_rel_err": 1.6209920557383118e-16,
+      "numpy": 4340.0991957131055,
+      "openmm": 4340.099195713106,
+      "rel_err": 2.0955620154287565e-16
+     }
+    },
+    "numpy_components": {
+     "angles": 19899.41319271899,
+     "bonds": 57062.03456475186,
+     "cmaps": 0.0,
+     "coulomb": -3011.2227115116793,
+     "impropers": 0.0,
+     "lj": 1214513.1238379537,
+     "lj14": 16620.51728009299,
+     "lj146": 0.0,
+     "torsions": 4340.0991957131055,
+     "urey_bradley": 0.0
+    },
+    "skipped": [],
+    "term_counts": {
+     "angles": 1218,
+     "bonds": 676,
+     "cmaps": 0,
+     "exclusions": 1894,
+     "improper_terms": 0,
+     "pair14": 1578,
+     "torsion_terms": 2500,
+     "urey_bradley": 0
+    },
+    "total": {
+     "abs_err": 0.39166875183582306,
+     "numpy": 1309423.965359719,
+     "rel_err": 2.9911521786921135e-07,
+     "sum_of_classes": 1309424.3570284708
+    }
+   },
+   "total": {
+    "energy": 1309423.4272738264,
+    "force_absmax": 85113003.69384886,
+    "force_norm": 138378100.47995627
+   }
+  }
+ ],
+ "counts": {
+  "angles": {
+   "extra": 0,
+   "extra_examples": [],
+   "json": 1218,
+   "missing": 0,
+   "missing_examples": [],
+   "parmed": 1218
+  },
+  "bonds": {
+   "extra": 0,
+   "extra_examples": [],
+   "json": 676,
+   "missing": 0,
+   "missing_examples": [],
+   "parmed": 676
+  },
+  "cmaps": {
+   "json": 0,
+   "parmed": 0
+  },
+  "dihedrals": {
+   "extra": 0,
+   "extra_examples": [],
+   "json_quartets": 1908,
+   "json_terms": 2500,
+   "missing": 0,
+   "missing_examples": [],
+   "multiplicity_examples": [],
+   "multiplicity_mismatch": 0,
+   "parmed_quartets": 1908,
+   "parmed_terms": 2500
+  },
+  "exclusions": {
+   "extra": 0,
+   "extra_examples": [],
+   "json": 1894,
+   "missing": 0,
+   "missing_examples": [],
+   "parmed": 1894
+  },
+  "impropers": {
+   "extra": 0,
+   "extra_examples": [],
+   "json": 0,
+   "missing": 0,
+   "missing_examples": [],
+   "parmed": 0
+  },
+  "lj146": {
+   "extra": 0,
+   "extra_examples": [],
+   "json": 0,
+   "missing": 0,
+   "missing_examples": [],
+   "parmed": 0
+  },
+  "normalized": {
+   "declarations": [],
+   "n_atoms": 628,
+   "nbfix_override_used": false,
+   "net_charge": -17.999999871585914,
+   "strict_refusals": []
+  },
+  "ok": true,
+  "pair14": {
+   "extra": 0,
+   "extra_examples": [],
+   "json": 1578,
+   "missing": 0,
+   "missing_examples": [],
+   "parmed": 1578
+  },
+  "urey_bradleys": {
+   "extra": 0,
+   "extra_examples": [],
+   "json": 0,
+   "missing": 0,
+   "missing_examples": [],
+   "parmed": 0
+  },
+  "virtual_sites": {
+   "json": 0,
+   "parmed": 0
+  }
+ },
+ "fixture": "dna",
+ "n_atoms": 628,
+ "nbfix_impact": {
+  "abs_error": 3.458556420810055e-06,
+  "matrix": {
+   "max_relative_deviation": 5.6611706651679e-09,
+   "pairs_over_1e-8": 0,
+   "used_pairs": 225,
+   "used_types": 15
+  },
+  "normal_pair_lj_lorentz_berthelot": 3589.696599542497,
+  "normal_pair_lj_parameters": 3589.6966030010535,
+  "rel_error": 9.634676139255437e-10
+ },
+ "nonbonded_exceptions": [
+  {
+   "count": 3472,
+   "label": "f3:NonbondedForce",
+   "particles": 628
+  }
+ ],
+ "periodic": false,
+ "protocol": {
+  "constraints": "none",
+  "cutoff_nm": null,
+  "dispersion_correction": false,
+  "ewald_error_tolerance": null,
+  "nonbonded": "NoCutoff"
+ },
+ "schema": "1.0.0"
+}

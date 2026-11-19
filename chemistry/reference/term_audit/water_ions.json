@@ -1,0 +1,291 @@
+{
+ "configs": [
+  {
+   "class_sum": {
+    "energy": -25746.39169365542,
+    "energy_abs_err": 0.0,
+    "energy_rel_err": 0.0,
+    "force_abs_err": 0.000213623046875,
+    "force_rel_err": 6.09961311291901e-10
+   },
+   "classes": {
+    "f0:HarmonicBondForce": {
+     "energy": 7.577687774629272e-09,
+     "force_absmax": 0.007120571027618624,
+     "force_norm": 0.12918901805788527,
+     "label": "f0:HarmonicBondForce"
+    },
+    "f1:HarmonicAngleForce": {
+     "energy": 0.0,
+     "force_absmax": 0.0,
+     "force_norm": 0.0,
+     "label": "f1:HarmonicAngleForce"
+    },
+    "f2:PeriodicTorsionForce": {
+     "energy": 0.0,
+     "force_absmax": 0.0,
+     "force_norm": 0.0,
+     "label": "f2:PeriodicTorsionForce"
+    },
+    "f3:CustomNonbondedForce[1-6-4]": {
+     "energy": -204.5273041240871,
+     "force_absmax": 491.3812561035156,
+     "force_norm": 1335.6601727281725,
+     "label": "f3:CustomNonbondedForce[1-6-4]"
+    },
+    "f4:NonbondedForce": {
+     "coulomb_energy": -30057.28392553344,
+     "energy": -25541.86438953891,
+     "force_absmax": 2292.512939453125,
+     "force_norm": 43215.5312934948,
+     "label": "f4:NonbondedForce",
+     "lj_energy": 4515.419486310333
+    }
+   },
+   "config": 0,
+   "total": {
+    "energy": -25746.39169365542,
+    "force_absmax": 2406.2046368181677,
+    "force_norm": 43391.684793643566
+   }
+  },
+  {
+   "class_sum": {
+    "energy": 6569.115409229384,
+    "energy_abs_err": 0.0,
+    "energy_rel_err": 0.0,
+    "force_abs_err": 0.000762939453125,
+    "force_rel_err": 4.002879482759036e-11
+   },
+   "classes": {
+    "f0:HarmonicBondForce": {
+     "energy": 27326.817194730622,
+     "force_absmax": 9968.533183168565,
+     "force_norm": 239772.7753785619,
+     "label": "f0:HarmonicBondForce"
+    },
+    "f1:HarmonicAngleForce": {
+     "energy": 0.0,
+     "force_absmax": 0.0,
+     "force_norm": 0.0,
+     "label": "f1:HarmonicAngleForce"
+    },
+    "f2:PeriodicTorsionForce": {
+     "energy": 0.0,
+     "force_absmax": 0.0,
+     "force_norm": 0.0,
+     "label": "f2:PeriodicTorsionForce"
+    },
+    "f3:CustomNonbondedForce[1-6-4]": {
+     "energy": -236.8414049707353,
+     "force_absmax": 1272.3900146484375,
+     "force_norm": 2086.4838516946584,
+     "label": "f3:CustomNonbondedForce[1-6-4]"
+    },
+    "f4:NonbondedForce": {
+     "coulomb_energy": -30410.296212077286,
+     "energy": -20520.860380530503,
+     "force_absmax": 21296.400390625,
+     "force_norm": 81253.40414008663,
+     "label": "f4:NonbondedForce",
+     "lj_energy": 9889.436139728874
+    }
+   },
+   "config": 1,
+   "total": {
+    "energy": 6569.115409229384,
+    "force_absmax": 22604.14318465739,
+    "force_norm": 251973.47116489094
+   }
+  },
+  {
+   "class_sum": {
+    "energy": 141503.74585405982,
+    "energy_abs_err": 0.0,
+    "energy_rel_err": 0.0,
+    "force_abs_err": 0.007568359375,
+    "force_rel_err": 9.495562836291498e-11
+   },
+   "classes": {
+    "f0:HarmonicBondForce": {
+     "energy": 110150.44468306635,
+     "force_absmax": 20062.36024103526,
+     "force_norm": 483462.5379003511,
+     "label": "f0:HarmonicBondForce"
+    },
+    "f1:HarmonicAngleForce": {
+     "energy": 0.0,
+     "force_absmax": 0.0,
+     "force_norm": 0.0,
+     "label": "f1:HarmonicAngleForce"
+    },
+    "f2:PeriodicTorsionForce": {
+     "energy": 0.0,
+     "force_absmax": 0.0,
+     "force_norm": 0.0,
+     "label": "f2:PeriodicTorsionForce"
+    },
+    "f3:CustomNonbondedForce[1-6-4]": {
+     "energy": -317.40613217279315,
+     "force_absmax": 3739.93798828125,
+     "force_norm": 5511.182254889121,
+     "label": "f3:CustomNonbondedForce[1-6-4]"
+    },
+    "f4:NonbondedForce": {
+     "coulomb_energy": -30967.2373875381,
+     "energy": 31670.707303166244,
+     "force_absmax": 417418.46875,
+     "force_norm": 1113293.5688831971,
+     "label": "f4:NonbondedForce",
+     "lj_energy": 62637.937136627734
+    }
+   },
+   "config": 2,
+   "total": {
+    "energy": 141503.74585405982,
+    "force_absmax": 422419.45629333594,
+    "force_norm": 1218744.0678051994
+   }
+  }
+ ],
+ "counts": {
+  "angles": {
+   "extra": 0,
+   "extra_examples": [],
+   "json": 0,
+   "missing": 0,
+   "missing_examples": [],
+   "parmed": 0
+  },
+  "bonds": {
+   "extra": 0,
+   "extra_examples": [],
+   "json": 2163,
+   "missing": 0,
+   "missing_examples": [],
+   "parmed": 2163
+  },
+  "cmaps": {
+   "json": 0,
+   "parmed": 0
+  },
+  "dihedrals": {
+   "extra": 0,
+   "extra_examples": [],
+   "json_quartets": 0,
+   "json_terms": 0,
+   "missing": 0,
+   "missing_examples": [],
+   "multiplicity_examples": [],
+   "multiplicity_mismatch": 0,
+   "parmed_quartets": 0,
+   "parmed_terms": 0
+  },
+  "exclusions": {
+   "extra": 0,
+   "extra_examples": [],
+   "json": 2163,
+   "missing": 0,
+   "missing_examples": [],
+   "parmed": 2163
+  },
+  "impropers": {
+   "extra": 0,
+   "extra_examples": [],
+   "json": 0,
+   "missing": 0,
+   "missing_examples": [],
+   "parmed": 0
+  },
+  "lj146": {
+   "extra": 0,
+   "extra_examples": [],
+   "json": 721,
+   "missing": 0,
+   "missing_examples": [],
+   "parmed": 721
+  },
+  "normalized": {
+   "declarations": [
+    {
+     "code": "box_mismatch",
+     "message": "prmtop box lengths_nm=(3.222054,3.215813,3.156086) differs from coordinate box lengths_nm=(2.816736,2.811280,2.759066) angles_deg=(90.000000,90.000000,90.000000) by 4.053178e-01 nm; the prmtop box is ",
+     "severity": "warning"
+    }
+   ],
+   "n_atoms": 2164,
+   "nbfix_override_used": false,
+   "net_charge": 2.0,
+   "strict_refusals": []
+  },
+  "ok": true,
+  "pair14": {
+   "extra": 0,
+   "extra_examples": [],
+   "json": 0,
+   "missing": 0,
+   "missing_examples": [],
+   "parmed": 0
+  },
+  "urey_bradleys": {
+   "extra": 0,
+   "extra_examples": [],
+   "json": 0,
+   "missing": 0,
+   "missing_examples": [],
+   "parmed": 0
+  },
+  "virtual_sites": {
+   "json": 0,
+   "parmed": 0
+  }
+ },
+ "fixture": "water_ions",
+ "n_atoms": 2164,
+ "nbfix_impact": null,
+ "nonbonded_exceptions": [
+  {
+   "count": 2163,
+   "label": "f4:NonbondedForce",
+   "particles": 2164
+  }
+ ],
+ "periodic": true,
+ "pme_convergence": [
+  {
+   "energy": -25747.0749843649,
+   "energy_delta_vs_loosest": 0.0,
+   "energy_delta_vs_stored": -0.6832907094794791,
+   "ewald_error_tolerance": 0.0005,
+   "force_absmax": 2406.3916485369177,
+   "force_norm": 43391.45715986195,
+   "force_norm_delta_vs_loosest": 0.0
+  },
+  {
+   "energy": -25746.39169365542,
+   "energy_delta_vs_loosest": 0.6832907094794791,
+   "energy_delta_vs_stored": 0.0,
+   "ewald_error_tolerance": 1e-06,
+   "force_absmax": 2406.2046368181677,
+   "force_norm": 43391.684793643566,
+   "force_norm_delta_vs_loosest": 0.22763378161471337
+  },
+  {
+   "energy": -25746.409021530988,
+   "energy_delta_vs_loosest": 0.6659628339111805,
+   "energy_delta_vs_stored": -0.017327875568298623,
+   "ewald_error_tolerance": 1e-08,
+   "force_absmax": 2406.2073223650427,
+   "force_norm": 43391.683178489046,
+   "force_norm_delta_vs_loosest": 0.2260186270941631
+  }
+ ],
+ "protocol": {
+  "constraints": "none",
+  "cutoff_nm": 1.0,
+  "dispersion_correction": false,
+  "ewald_error_tolerance": 1e-06,
+  "nonbonded": "PME"
+ },
+ "schema": "1.0.0"
+}

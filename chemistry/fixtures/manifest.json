@@ -1,0 +1,147 @@
+{
+  "schema": "1.0.0",
+  "description": "Five-class Phase-2 numeric fixture manifest plus one adapter-evidence entry (see 'adapter_fixtures', which is outside 'fixtures' so the five-class numeric gate is unchanged). Paths are relative to the repository root. 'ready' fixtures have a complete parameter file and a stored independent OpenMM reference; 'blocked' fixtures state the exact missing input. Every committed file is pinned by SHA-256 and byte count in its entry's 'files' object; a declared path that is absent from disk is recorded as 'status_of_file: missing' rather than hashed. The membrane parameters are generated into an external cache and are not committed, so only its source structure is pinned. This description is prose: the hashes, not this text, are the integrity gate. 'adapter_fixtures' entries carry CHARMM structural-mapping evidence only and are not part of the five-class numeric comparison.",
+  "fixtures": [
+    {
+      "id": "water_ions",
+      "class": "water+ions",
+      "family": "amber",
+      "parameter_file": "wrappers/python/tests/systems/Mg_water.prmtop",
+      "coordinate_file": "wrappers/python/tests/systems/Mg_water.inpcrd",
+      "force_field": "AMBER prmtop from the OpenMM test suite (Zn2+ ion in TIP3P water; the file is named Mg_water but the atom is ZN); includes AMBER 1-6-4 LENNARD_JONES_CCOEF, implemented as a separate -C/r^4 factor",
+      "files": {
+        "wrappers/python/tests/systems/Mg_water.prmtop": {
+          "sha256": "0d64cc8db05b3ccc4367d0e0753a9f1802cdf4764a1a103c5295da2d93ddc03b",
+          "bytes": 353088
+        },
+        "wrappers/python/tests/systems/Mg_water.inpcrd": {
+          "sha256": "441090af373972be3e363935b07e16ec7506612accb415710febc2d8936040a3",
+          "bytes": 158147
+        }
+      },
+      "status": "ready"
+    },
+    {
+      "id": "solvated_protein",
+      "class": "solvated protein",
+      "family": "amber",
+      "parameter_file": "wrappers/python/tests/systems/18protein.parm7",
+      "coordinate_file": "wrappers/python/tests/systems/18protein.rst7",
+      "force_field": "AMBER prmtop from the OpenMM test suite (18-residue solvated protein, K+/Cl-, TIP3P)",
+      "files": {
+        "wrappers/python/tests/systems/18protein.parm7": {
+          "sha256": "ff79e0c7b1e6db1db5c1f713e9e851fda6f577d2e7852fd2983000967c02f985",
+          "bytes": 2922112
+        },
+        "wrappers/python/tests/systems/18protein.rst7": {
+          "sha256": "f747ece6fa0b8a803fb01529eea480f6f4fe50aeb3efaa9dd994bd15eb20ee3e",
+          "bytes": 786143
+        }
+      },
+      "status": "ready"
+    },
+    {
+      "id": "dna",
+      "class": "DNA",
+      "family": "amber",
+      "parameter_file": "wrappers/python/tests/systems/DNA_mbondi3.prmtop",
+      "coordinate_file": "wrappers/python/tests/systems/DNA_mbondi3.inpcrd",
+      "force_field": "AMBER prmtop from the OpenMM test suite (DNA duplex, no periodic box)",
+      "files": {
+        "wrappers/python/tests/systems/DNA_mbondi3.prmtop": {
+          "sha256": "0d05b18cb559862b8b36f556f1347eb1f4e01309bc507e3f8b06193734ffb1be",
+          "bytes": 280999
+        },
+        "wrappers/python/tests/systems/DNA_mbondi3.inpcrd": {
+          "sha256": "4f0c600d9d4b0ecfad5e96297073019459ef2d549da6829592eeb729f2e58aef",
+          "bytes": 22942
+        }
+      },
+      "status": "ready"
+    },
+    {
+      "id": "membrane",
+      "class": "lipid membrane",
+      "family": "amber",
+      "generator": "dppc_bilayer",
+      "source_structure": "wrappers/python/openmm/app/data/DPPC.pdb",
+      "force_field": "OpenMM amber19/lipid21.xml + amber19/tip3p.xml, exported to AMBER prmtop by ParmEd (DPPC bilayer + water)",
+      "files": {
+        "wrappers/python/openmm/app/data/DPPC.pdb": {
+          "sha256": "6020f03c08d38b8469c3074da826fdf979a1ea627354459a092e27558af503d6",
+          "bytes": 2645932
+        }
+      },
+      "generated_artifact_status": "external cache; not committed",
+      "status": "generated"
+    },
+    {
+      "id": "protein_ligand",
+      "class": "protein-ligand complex",
+      "family": "amber",
+      "parameter_file": "chemistry/fixtures/protein_ligand/protein_ligand.prmtop",
+      "coordinate_file": "chemistry/fixtures/protein_ligand/protein_ligand.inpcrd",
+      "structure_file": "chemistry/fixtures/protein_ligand/protein_ligand.pdb",
+      "force_field": "AMBER ff14SB protein + OpenForceField-parameterized catechol ligand (residue UNL) from PDB 1XEP (T4 lysozyme L99A/M102Q); solute-only prmtop/coordinates derived from the MIT-licensed ljmartin/mmpbsa_from_openmm preparation (commit 48664084); no box, NoCutoff reference",
+      "source_license": "MIT (ljmartin/mmpbsa_from_openmm, commit 48664084b88e7cf4f731e5ab4082a7edd8198345; Copyright (c) 2020 ljmartin); PDB 1XEP public structure data",
+      "files": {
+        "chemistry/fixtures/protein_ligand/protein_ligand.prmtop": {
+          "sha256": "4e9c9333c25987fa0a5a1ca710db3ed2244079a4103af18d9b22298062046d1c",
+          "bytes": 1640178
+        },
+        "chemistry/fixtures/protein_ligand/protein_ligand.inpcrd": {
+          "sha256": "bda9d2e1311aca352314d9f1ffef1ab12dfa3e87d0392722d5b4a956ef4a799f",
+          "bytes": 95470
+        },
+        "chemistry/fixtures/protein_ligand/protein_ligand.pdb": {
+          "sha256": "719f7f5c41b7d1847d512b08d659c4c955e4badeae1c8e70e6f0bf1e88feb1fe",
+          "bytes": 206679
+        }
+      },
+      "status": "ready"
+    }
+  ],
+  "adapter_fixtures": [
+    {
+      "id": "charmm_adapter",
+      "class": "CHARMM PSF/PRM adapter evidence (not one of the five classes)",
+      "family": "charmm",
+      "status": "ready (structural mapping only; no independent CHARMM energy oracle exists)",
+      "files": {
+        "wrappers/python/tests/systems/methanol_ions.psf": {
+          "sha256": "dc4a8c0964680543c49e6ae406a6db58e64eea8a11da3928e83d7463f1298399",
+          "bytes": 1795
+        },
+        "wrappers/python/tests/systems/methanol_ions.pdb": {
+          "sha256": "7e55e9ecabda1d9d61c3c0528f5140d759011bae673b6f8ffc70d091334cf6fc",
+          "bytes": 755
+        },
+        "wrappers/python/tests/systems/par_all36_cgenff.prm": {
+          "sha256": "46a5ba766eb78af01f7bb67f65d2bba674aaa08c8f3bba11440c6c4688d8f5d0",
+          "bytes": 578077
+        },
+        "wrappers/python/tests/systems/water_methanol.prm": {
+          "sha256": "88970a7767c5184cd59d8ca270a2b4d5c2698c0dcea3a54f5ae89f6ba4c7b6ac",
+          "bytes": 1395
+        },
+        "wrappers/python/tests/systems/toppar_water_ions.str": {
+          "sha256": "dc00380cd8696aa89d98821dee31887bbf1d1af5d3ed06834f56ecbe239baa1e",
+          "bytes": 9558
+        },
+        "chemistry/reference/charmm_adapter.json": {
+          "sha256": "f588350fefb37779e490234c4eddafed8eb14d64d6cfe5561363d618569c6fef",
+          "bytes": 4008
+        },
+        "chemistry/reference/charmm_adapter.f32": {
+          "sha256": "91f1aaea156102ab2ac7c2608b6559ee3e1c4db845cf0103d75b4e96fc66ff7b",
+          "bytes": 288
+        }
+      },
+      "reference_json": "chemistry/reference/charmm_adapter.json",
+      "reference_force_file": "chemistry/reference/charmm_adapter.f32",
+      "n_atoms": 8,
+      "gated_by": "julia/test/test_workflow_manifest_integrity.jl (hash integrity only)",
+      "limitation": "CHARMM has structural-only reference evidence (atom/term mapping + zero-force consistency at the stored coordinates), so it is not part of the five-class numeric gate; no independent CHARMM energy oracle exists in this checkout."
+    }
+  ]
+}

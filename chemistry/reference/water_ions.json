@@ -1,0 +1,127 @@
+{
+  "box_nm": [
+    [
+      3.2220537,
+      0.0,
+      0.0
+    ],
+    [
+      0.0,
+      3.2158129000000004,
+      0.0
+    ],
+    [
+      0.0,
+      0.0,
+      3.1560857
+    ]
+  ],
+  "class": "water+ions",
+  "configs": [
+    {
+      "bonded_kj_mol": 7.577687774629272e-09,
+      "config_index": 0,
+      "energy_kj_mol": -25746.39169365542,
+      "force_absmax": 2406.2046368181677,
+      "force_norm": 43391.684793643566,
+      "nonbonded_kj_mol": -25746.391693662998
+    },
+    {
+      "bonded_kj_mol": 27326.817194730622,
+      "config_index": 1,
+      "energy_kj_mol": 6569.115409229384,
+      "force_absmax": 22604.14318465739,
+      "force_norm": 251973.47116489094,
+      "nonbonded_kj_mol": -20757.70178550124
+    },
+    {
+      "bonded_kj_mol": 110150.44468306635,
+      "config_index": 2,
+      "energy_kj_mol": 141503.74585405982,
+      "force_absmax": 422419.45629333594,
+      "force_norm": 1218744.0678051994,
+      "nonbonded_kj_mol": 31353.30117099345
+    }
+  ],
+  "coordinate_box_nm": [
+    [
+      2.81673595,
+      0.0,
+      0.0
+    ],
+    [
+      0.0,
+      2.81128021,
+      0.0
+    ],
+    [
+      0.0,
+      0.0,
+      2.75906638
+    ]
+  ],
+  "fixture": "water_ions",
+  "force_encoding": "float32 little-endian, config-major; per config the flat C-order sequence of the OpenMM (N,3) force array (x1,y1,z1,x2,...), i.e. Julia reshape(flat,3,N)",
+  "force_file": "water_ions.f32",
+  "force_groups": [
+    {
+      "class": "HarmonicBondForce",
+      "group": 0,
+      "index": 0
+    },
+    {
+      "class": "HarmonicAngleForce",
+      "group": 0,
+      "index": 1
+    },
+    {
+      "class": "PeriodicTorsionForce",
+      "group": 0,
+      "index": 2
+    },
+    {
+      "class": "CustomNonbondedForce",
+      "group": 1,
+      "index": 3
+    },
+    {
+      "class": "NonbondedForce",
+      "group": 1,
+      "index": 4
+    }
+  ],
+  "generated_by": "chemistry/tools/make_reference.py",
+  "n_atoms": 2164,
+  "n_configs": 3,
+  "openmm_version": "8.6.1",
+  "periodic": true,
+  "perturbation": {
+    "applies_to": "all three components for every config >= 1; amplitude 0.02*config nm",
+    "formula": "q[d,i] += 0.02*config*sin(0.37*(i+1) + 1.1*(d+1))",
+    "index_base": "i is 0-based; d is the Cartesian component (0=x, 1=y, 2=z); config = 1,2,...",
+    "note": "config 0 is unperturbed. config 1 uses amplitude 0.02 nm, config 2 uses 0.04 nm, etc., in double precision. No coordinates are stored.",
+    "units": "nm"
+  },
+  "platform": "CPU",
+  "platform_properties": {
+    "DeterministicForces": "true",
+    "Threads": "1"
+  },
+  "protocol": {
+    "constraints": "none",
+    "cutoff_nm": 1.0,
+    "dispersion_correction": false,
+    "ewald_error_tolerance": 1e-06,
+    "nonbonded": "PME",
+    "remove_cmmotion": false,
+    "rigid_water": false
+  },
+  "schema": "1.0.0",
+  "source": {
+    "coordinate_file": "wrappers/python/tests/systems/Mg_water.inpcrd",
+    "coordinate_sha256": "441090af373972be3e363935b07e16ec7506612accb415710febc2d8936040a3",
+    "force_field": "AMBER prmtop from the OpenMM test suite (Zn2+ ion in TIP3P water; the file is named Mg_water but the atom is ZN); includes AMBER 1-6-4 LENNARD_JONES_CCOEF, implemented as a separate -C/r^4 factor",
+    "parameter_file": "wrappers/python/tests/systems/Mg_water.prmtop",
+    "parameter_sha256": "0d64cc8db05b3ccc4367d0e0753a9f1802cdf4764a1a103c5295da2d93ddc03b"
+  }
+}

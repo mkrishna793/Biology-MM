@@ -1,0 +1,164 @@
+{
+  "attribution_correction": {
+    "correct_source": "ljmartin/mmpbsa_from_openmm at commit 48664084b88e7cf4f731e5ab4082a7edd8198345.",
+    "earlier_wrong_claim": "An earlier integration draft attributed this fixture to freeenergylab/amber_tutorials (MDforIL2/1PY2). That repository contains an IL2 + SP4206 system, not this T4 lysozyme + catechol system, and has no 1XEP preparation. The claim was rejected.",
+    "verification": "The fixture protein heavy atoms are bit-identical to 1XEP chain A (1290/1290, max 0.000 A); the UNL catechol matches 1XEP CAQ altloc A within 0.0133 A after ring-order mapping."
+  },
+  "config0_reference": {
+    "engine_energy_kj_mol_float32_reported": 42780.4667,
+    "engine_max_force_kj_mol_per_nm_float32_reported": 13751.4659,
+    "engine_vs_openmm_energy_delta_kj_mol": 0.0064,
+    "engine_vs_openmm_max_force_delta_kj_mol_per_nm": 0.0002,
+    "openmm_energy_kj_mol": 42780.460312603434,
+    "openmm_max_force_kj_mol_per_nm": 13751.46569680516,
+    "protocol": "OpenMM AmberPrmtopFile.createSystem(nonbondedMethod=NoCutoff, constraints=None, rigidWater=False, removeCMMotion=False); force group 0 = bonded, 1 = NonbondedForce/CustomNonbondedForce; dispersion correction off; Platform CPU, Threads=1, DeterministicForces=true; config 0 = source coordinates; configs 1,2 apply the INTERFACE.md 0.02*config nm sine perturbation",
+    "verification": "A fresh OpenMM 8.6.1 recomputation reproduces the committed reference bit-for-bit (energy delta 0.0, max-force delta 0.0 kJ/mol/nm); the stored Float32 config-0 force array differs from the double recomputation by at most 4.9e-4 kJ/mol/nm. The engine's Float32 numbers sit 6.4e-3 kJ/mol and 2e-4 kJ/mol/nm from the double oracle, far inside the 0.05 tolerances."
+  },
+  "counts": {
+    "atoms": 2615,
+    "bonds": 2635,
+    "box_nm": null,
+    "ligand_atoms": 14,
+    "ligand_charge_e": 0.0,
+    "ligand_elements": {
+      "C": 6,
+      "H": 6,
+      "O": 2
+    },
+    "ligand_residue": "UNL",
+    "net_charge_e": 8.0,
+    "periodic": false,
+    "protein_atoms": 2601,
+    "protein_residue_numbering": "ParmEd 0..161 = 1XEP chain A residues 1..162",
+    "protein_residues": 162,
+    "residues": 163
+  },
+  "derivation": {
+    "not_reproducible_part": "The exact Open Force Field Toolkit version used by the source author is not recorded; the committed parameters/coordinates define this fixture, not a re-run of ligand parameterization.",
+    "reproducible_part": "The derived files and every geometry/count/parameter check in tools/verify_protein_ligand.py; the parent files are pinned by SHA-256 and MIT-licensed.",
+    "source_files": [
+      "openmm_simulation/complex_plus_water.parm7",
+      "openmm_simulation/complex_coords.pdb"
+    ],
+    "steps": [
+      "Load complex_plus_water.parm7 with ParmEd and complex_coords.pdb with OpenMM PDBFile.",
+      "Select all atoms whose residue name is not HOH, WAT, NA, CL, Na+ or Cl- (2615 atoms: 2601 protein + 14 UNL).",
+      "Assign the selected coordinates in prmtop atom order; remove the periodic box.",
+      "Write protein_ligand.prmtop, protein_ligand.inpcrd and a provenance PDB with the same order."
+    ]
+  },
+  "derived_files": {
+    "protein_ligand.inpcrd": {
+      "bytes": 95470,
+      "sha256": "bda9d2e1311aca352314d9f1ffef1ab12dfa3e87d0392722d5b4a956ef4a799f"
+    },
+    "protein_ligand.pdb": {
+      "bytes": 206679,
+      "sha256": "719f7f5c41b7d1847d512b08d659c4c955e4badeae1c8e70e6f0bf1e88feb1fe"
+    },
+    "protein_ligand.prmtop": {
+      "bytes": 1640178,
+      "derived_from": "openmm_simulation/complex_plus_water.parm7",
+      "sha256": "4e9c9333c25987fa0a5a1ca710db3ed2244079a4103af18d9b22298062046d1c"
+    }
+  },
+  "discrepancies": [
+    "The earlier freeenergylab/amber_tutorials attribution was wrong; see attribution_correction.",
+    "The prmtop is a locally written ParmEd export (VERSION DATE 11/13/26 12:25:17), so its bytes are not an upstream artifact; its parameters and coordinates are derived from the pinned MIT source files.",
+    "The exact OpenFF Toolkit/force-field version is not recorded by the source; parameters are consumed as stored."
+  ],
+  "fixture": "protein_ligand",
+  "license": {
+    "bytes": 1065,
+    "copyright": "Copyright (c) 2020 ljmartin",
+    "repository_commit": "48664084b88e7cf4f731e5ab4082a7edd8198345",
+    "repository_file": "LICENSE",
+    "sha256_of_license_text": "76638dc72caf595e8a0a165c372c4eb24325c4b64e97bdacd22d36f3edc3c3d4",
+    "spdx": "MIT",
+    "url": "https://raw.githubusercontent.com/ljmartin/mmpbsa_from_openmm/48664084b88e7cf4f731e5ab4082a7edd8198345/LICENSE"
+  },
+  "parameter_provenance": {
+    "ligand_force_field": "OpenForceField-parameterized catechol (residue UNL, 14 atoms); ligand atom-type labels C1/O1/H1/H2, ligand charges sum to 0.0 e",
+    "note": "Neither the fixture nor the cited repository records the exact Open Force Field Toolkit / force-field version used for the ligand. The reference is defined by these committed parameters and coordinates, not by re-running a ligand parameterization.",
+    "openff_version_recorded_by_source": false,
+    "prmtop_atom_type_indices": 21,
+    "prmtop_atom_type_note": "AMBER_ATOM_TYPE strings are element-class labels (N1, H1, C1, C2, O1, O2, S1, H1..H8): 21 nonbonded type indices share 14 labels, i.e. the layout of an OpenMM System exported through ParmEd rather than a tleap-written prmtop. Ligand and protein parameters are therefore consumed as stored in this file.",
+    "prmtop_distinct_atom_type_labels": 14,
+    "protein_force_field": "AMBER ff14SB",
+    "protein_force_field_evidence": "159 of 162 protein residues have partial charges identical to OpenMM's amber14/protein.ff14SB.xml templates (max delta 2.2e-09 e). The three excluded residues are MET 1 and LYS 162 (terminal cap atoms H2/H3 and OXT are not in the internal templates) and HIS 30 (OpenMM names the protonation templates HID/HIE/HIP)."
+  },
+  "pdb_id": "1XEP",
+  "pdb_title": "Catechol in complex with T4 lysozyme L99A/M102Q",
+  "pose_statement": "This fixture is the 1XEP crystal pose of T4 lysozyme L99A/M102Q with catechol, kept in the deposited crystallographic frame (protein heavy atoms bit-identical to 1XEP chain A). The ligand is the deposited CAQ altloc A geometry within 0.014 A after atom-name mapping. It is not a generated, docked, minimized-into-place or otherwise synthetic pose, and it is not an affinity or free-energy result.",
+  "reference_files": {
+    "chemistry/reference/protein_ligand.f32": {
+      "bytes": 94140,
+      "sha256": "6342e02e2916023d76500020642973996d7645b97953bac56195e91cc47bc718"
+    },
+    "chemistry/reference/protein_ligand.json": {
+      "bytes": 3168,
+      "sha256": "f91ab0f69b60683b1938066d8028b76f51d2448db36d51a0763108c1430e2b9f"
+    }
+  },
+  "role": "Static parameter/force-field fixture for the Phase-2 AMBER importer (one solute-only prmtop/inpcrd/pdb set plus one OpenMM NoCutoff reference). It is not a trajectory, not an MD result, and not a binding-affinity estimate.",
+  "schema": "1.0.0",
+  "source": {
+    "commit": "48664084b88e7cf4f731e5ab4082a7edd8198345",
+    "commit_date": "2020-10-21T04:01:41Z",
+    "description": "MIT-licensed example: 1XEP T4 lysozyme + catechol, OpenForceField ligand parameterization, combined Amber topology exported by ParmEd.",
+    "files": [
+      {
+        "bytes": 4206938,
+        "path": "openmm_simulation/complex_plus_water.parm7",
+        "role": "parent solvated prmtop: 18461 atoms (protein + UNL catechol + HOH/NA/CL), triclinic 60-degree box",
+        "sha256": "f25be02ef674a3c3d35323b59e2fa75d961887f058e1e918d4b19dd655867ab5"
+      },
+      {
+        "bytes": 1495520,
+        "path": "openmm_simulation/complex_coords.pdb",
+        "role": "matching coordinate frame; atom names/order match the prmtop",
+        "sha256": "6008572bb948cbc19a2f8223376b8495904e46256406046cfa88c958731c1665"
+      }
+    ],
+    "license_bytes": 1065,
+    "license_file": "LICENSE",
+    "license_sha256": "76638dc72caf595e8a0a165c372c4eb24325c4b64e97bdacd22d36f3edc3c3d4",
+    "license_spdx": "MIT",
+    "pdb_entry": "1XEP",
+    "pdb_url": "https://files.rcsb.org/download/1XEP.pdb",
+    "repository": "https://github.com/ljmartin/mmpbsa_from_openmm"
+  },
+  "structure_provenance": {
+    "deposited_structure_file": {
+      "bytes": 166374,
+      "sha256": "eee83ed712919c8f2e47811d8dc4967e88d7e3e6ca4e0d3c87e540acbec62871",
+      "url": "https://files.rcsb.org/download/1XEP.pdb"
+    },
+    "evidence": [
+      {
+        "check": "protein heavy atoms vs 1XEP chain A (altloc ' ' or A)",
+        "result": "1290 of 1290 matched atoms are bit-identical (max deviation 0.000 A); the fixture keeps the deposited crystallographic frame with no rigid-body transform"
+      },
+      {
+        "check": "catechol ligand (UNL) vs 1XEP HETATM CAQ altloc A after ring-order mapping (C1<-C6, C2<-C1, C3<-C2, C4<-C3, C5<-C4, C6<-C5, O1<-O4, O2<-O3)",
+        "result": "heavy-atom RMSD 0.0075 A, max 0.0133 A (1XEP CAQ altloc B is 0.169 A away and was not used); the residual is coordinate precision, not a different conformer"
+      },
+      {
+        "check": "protein sequence",
+        "result": "162 resolved residues, MET1..LYS162 of T4 lysozyme, including the L99A/M102Q affinity-mutation sites of 1XEP (ParmEd numbers the residues 0..161, one lower than the deposited numbering)"
+      },
+      {
+        "check": "ligand identity",
+        "result": "one UNL residue, 14 atoms C6H6O2, one six-membered all-carbon ring, two C-O bonds, four aromatic C-H and two O-H; i.e. catechol (benzene-1,2-diol)"
+      }
+    ],
+    "statement": "The coordinates are the 1XEP crystal pose, not a synthetic or hand-placed pose and not a docked pose."
+  },
+  "verification_command": "~/.cache/biology-mm/.venv/bin/python chemistry/tools/verify_protein_ligand.py",
+  "verified_on": "2026-11-13",
+  "verified_with": {
+    "openmm": "8.6.1",
+    "parmed": "4.3.1",
+    "python": "3.12.15"
+  }
+}

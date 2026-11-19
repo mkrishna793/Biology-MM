@@ -1,0 +1,127 @@
+{
+  "box_nm": [
+    [
+      7.5,
+      0.0,
+      0.0
+    ],
+    [
+      0.0,
+      7.5,
+      0.0
+    ],
+    [
+      0.0,
+      0.0,
+      7.5
+    ]
+  ],
+  "class": "solvated protein",
+  "configs": [
+    {
+      "bonded_kj_mol": 21335.812255040728,
+      "config_index": 0,
+      "energy_kj_mol": -331125.56552012166,
+      "force_absmax": 79882.97200414125,
+      "force_norm": 218361.47689846222,
+      "nonbonded_kj_mol": -352461.3777751624
+    },
+    {
+      "bonded_kj_mol": 305407.77085692156,
+      "config_index": 1,
+      "energy_kj_mol": 3360.2481839571847,
+      "force_absmax": 138139.9720688145,
+      "force_norm": 823270.3279008672,
+      "nonbonded_kj_mol": -302047.5226729644
+    },
+    {
+      "bonded_kj_mol": 1155838.0814444236,
+      "config_index": 2,
+      "energy_kj_mol": 1257199.7424574066,
+      "force_absmax": 241063.07546281916,
+      "force_norm": 2344177.7431021114,
+      "nonbonded_kj_mol": 101361.66101298298
+    }
+  ],
+  "coordinate_box_nm": [
+    [
+      7.5,
+      0.0,
+      0.0
+    ],
+    [
+      0.0,
+      7.5,
+      0.0
+    ],
+    [
+      0.0,
+      0.0,
+      7.5
+    ]
+  ],
+  "fixture": "solvated_protein",
+  "force_encoding": "float32 little-endian, config-major; per config the flat C-order sequence of the OpenMM (N,3) force array (x1,y1,z1,x2,...), i.e. Julia reshape(flat,3,N)",
+  "force_file": "solvated_protein.f32",
+  "force_groups": [
+    {
+      "class": "HarmonicBondForce",
+      "group": 0,
+      "index": 0
+    },
+    {
+      "class": "HarmonicAngleForce",
+      "group": 0,
+      "index": 1
+    },
+    {
+      "class": "PeriodicTorsionForce",
+      "group": 0,
+      "index": 2
+    },
+    {
+      "class": "CMAPTorsionForce",
+      "group": 0,
+      "index": 3
+    },
+    {
+      "class": "NonbondedForce",
+      "group": 1,
+      "index": 4
+    }
+  ],
+  "generated_by": "chemistry/tools/make_reference.py",
+  "n_atoms": 21536,
+  "n_configs": 3,
+  "openmm_version": "8.6.1",
+  "periodic": true,
+  "perturbation": {
+    "applies_to": "all three components for every config >= 1; amplitude 0.02*config nm",
+    "formula": "q[d,i] += 0.02*config*sin(0.37*(i+1) + 1.1*(d+1))",
+    "index_base": "i is 0-based; d is the Cartesian component (0=x, 1=y, 2=z); config = 1,2,...",
+    "note": "config 0 is unperturbed. config 1 uses amplitude 0.02 nm, config 2 uses 0.04 nm, etc., in double precision. No coordinates are stored.",
+    "units": "nm"
+  },
+  "platform": "CPU",
+  "platform_properties": {
+    "DeterministicForces": "true",
+    "Threads": "1"
+  },
+  "protocol": {
+    "constraints": "none",
+    "cutoff_nm": 1.0,
+    "dispersion_correction": false,
+    "ewald_error_tolerance": 1e-06,
+    "nonbonded": "PME",
+    "remove_cmmotion": false,
+    "rigid_water": false
+  },
+  "schema": "1.0.0",
+  "source": {
+    "coordinate_file": "wrappers/python/tests/systems/18protein.rst7",
+    "coordinate_sha256": "f747ece6fa0b8a803fb01529eea480f6f4fe50aeb3efaa9dd994bd15eb20ee3e",
+    "force_field": "AMBER prmtop from the OpenMM test suite (18-residue solvated protein, K+/Cl-, TIP3P)",
+    "parameter_file": "wrappers/python/tests/systems/18protein.parm7",
+    "parameter_sha256": "ff79e0c7b1e6db1db5c1f713e9e851fda6f577d2e7852fd2983000967c02f985"
+  }
+}

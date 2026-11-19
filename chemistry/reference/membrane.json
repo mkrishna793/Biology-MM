@@ -1,0 +1,127 @@
+{
+  "box_nm": [
+    [
+      5.586500000000001,
+      0.0,
+      0.0
+    ],
+    [
+      0.0,
+      5.688600000000001,
+      0.0
+    ],
+    [
+      0.0,
+      0.0,
+      8.0993
+    ]
+  ],
+  "class": "lipid membrane",
+  "configs": [
+    {
+      "bonded_kj_mol": 66327.12505212816,
+      "config_index": 0,
+      "energy_kj_mol": -261037.0243327309,
+      "force_absmax": 5174.077008274957,
+      "force_norm": 192676.9504405712,
+      "nonbonded_kj_mol": -327364.1493848591
+    },
+    {
+      "bonded_kj_mol": 636528.7900689688,
+      "config_index": 1,
+      "energy_kj_mol": 364107.2895116279,
+      "force_absmax": 38208.30709281203,
+      "force_norm": 897197.1238970056,
+      "nonbonded_kj_mol": -272421.50055734086
+    },
+    {
+      "bonded_kj_mol": 2326900.429720661,
+      "config_index": 2,
+      "energy_kj_mol": 2547309.9223266034,
+      "force_absmax": 1063889.2096815328,
+      "force_norm": 3676438.1845434685,
+      "nonbonded_kj_mol": 220409.49260594236
+    }
+  ],
+  "coordinate_box_nm": [
+    [
+      5.586500000000001,
+      0.0,
+      0.0
+    ],
+    [
+      0.0,
+      5.688600000000001,
+      0.0
+    ],
+    [
+      0.0,
+      0.0,
+      8.0993
+    ]
+  ],
+  "fixture": "membrane",
+  "force_encoding": "float32 little-endian, config-major; per config the flat C-order sequence of the OpenMM (N,3) force array (x1,y1,z1,x2,...), i.e. Julia reshape(flat,3,N)",
+  "force_file": "membrane.f32",
+  "force_groups": [
+    {
+      "class": "HarmonicBondForce",
+      "group": 0,
+      "index": 0
+    },
+    {
+      "class": "HarmonicAngleForce",
+      "group": 0,
+      "index": 1
+    },
+    {
+      "class": "PeriodicTorsionForce",
+      "group": 0,
+      "index": 2
+    },
+    {
+      "class": "NonbondedForce",
+      "group": 1,
+      "index": 3
+    }
+  ],
+  "generated_by": "chemistry/tools/make_reference.py",
+  "n_atoms": 28160,
+  "n_configs": 3,
+  "openmm_version": "8.6.1",
+  "periodic": true,
+  "perturbation": {
+    "applies_to": "all three components for every config >= 1; amplitude 0.02*config nm",
+    "formula": "q[d,i] += 0.02*config*sin(0.37*(i+1) + 1.1*(d+1))",
+    "index_base": "i is 0-based; d is the Cartesian component (0=x, 1=y, 2=z); config = 1,2,...",
+    "note": "config 0 is unperturbed. config 1 uses amplitude 0.02 nm, config 2 uses 0.04 nm, etc., in double precision. No coordinates are stored.",
+    "units": "nm"
+  },
+  "platform": "CPU",
+  "platform_properties": {
+    "DeterministicForces": "true",
+    "Threads": "1"
+  },
+  "protocol": {
+    "constraints": "none",
+    "cutoff_nm": 1.0,
+    "dispersion_correction": false,
+    "ewald_error_tolerance": 1e-06,
+    "nonbonded": "PME",
+    "remove_cmmotion": false,
+    "rigid_water": false
+  },
+  "schema": "1.0.0",
+  "source": {
+    "coordinate_file": "$HOME/.cache/biology-mm/chemistry-fixtures/dppc.inpcrd",
+    "coordinate_sha256": "635310a1ad99f05e6d3f981ba20ac5abc9709725160af28504db922ee2085126",
+    "force_field": "OpenMM amber19/lipid21.xml + amber19/tip3p.xml, exported to AMBER prmtop by ParmEd (DPPC bilayer + water)",
+    "generated_coordinate_sha256": "635310a1ad99f05e6d3f981ba20ac5abc9709725160af28504db922ee2085126",
+    "generated_parameter_sha256": "648bcd4c3c7c4ee0d4dcbb491a4587ecfc917d7e1f46cc50e5b275f1e16743df",
+    "generator": "make_generated_fixtures.py",
+    "parameter_file": "$HOME/.cache/biology-mm/chemistry-fixtures/dppc.prmtop",
+    "parameter_sha256": "648bcd4c3c7c4ee0d4dcbb491a4587ecfc917d7e1f46cc50e5b275f1e16743df",
+    "source_structure": "wrappers/python/openmm/app/data/DPPC.pdb",
+    "source_structure_sha256": null
+  }
+}

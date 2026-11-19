@@ -1,0 +1,137 @@
+{
+  "box_nm": null,
+  "class": "CHARMM adapter evidence (not one of the five classes)",
+  "configs": [
+    {
+      "bonded_kj_mol": 40.24840260102276,
+      "config_index": 0,
+      "energy_kj_mol": -169.71668488047453,
+      "force_absmax": 5013.8619356723975,
+      "force_norm": 7837.369327604743,
+      "nonbonded_kj_mol": -209.96508748149728
+    },
+    {
+      "bonded_kj_mol": 195.19530187576123,
+      "config_index": 1,
+      "energy_kj_mol": -23.278304465054475,
+      "force_absmax": 11893.959408385526,
+      "force_norm": 15896.18604236025,
+      "nonbonded_kj_mol": -218.4736063408157
+    },
+    {
+      "bonded_kj_mol": 833.1059110842233,
+      "config_index": 2,
+      "energy_kj_mol": 607.1143468432365,
+      "force_absmax": 25372.73717218196,
+      "force_norm": 33721.899599003205,
+      "nonbonded_kj_mol": -225.9915642409868
+    }
+  ],
+  "coordinate_box_nm": [
+    [
+      1.2009,
+      0.0,
+      0.0
+    ],
+    [
+      0.0,
+      1.2338,
+      0.0
+    ],
+    [
+      0.0,
+      0.0,
+      1.151
+    ]
+  ],
+  "fixture": "charmm_adapter",
+  "force_encoding": "float32 little-endian, config-major; per config the flat C-order sequence of the OpenMM (N,3) force array (x1,y1,z1,x2,...), i.e. Julia reshape(flat,3,N)",
+  "force_file": "charmm_adapter.f32",
+  "force_groups": [
+    {
+      "class": "HarmonicBondForce",
+      "group": 0,
+      "index": 0
+    },
+    {
+      "class": "HarmonicAngleForce",
+      "group": 0,
+      "index": 1
+    },
+    {
+      "class": "HarmonicBondForce",
+      "group": 0,
+      "index": 2
+    },
+    {
+      "class": "PeriodicTorsionForce",
+      "group": 0,
+      "index": 3
+    },
+    {
+      "class": "CustomTorsionForce",
+      "group": 0,
+      "index": 4
+    },
+    {
+      "class": "CMAPTorsionForce",
+      "group": 0,
+      "index": 5
+    },
+    {
+      "class": "NonbondedForce",
+      "group": 1,
+      "index": 6
+    },
+    {
+      "class": "CustomNonbondedForce",
+      "group": 1,
+      "index": 7
+    }
+  ],
+  "generated_by": "chemistry/tools/make_reference.py",
+  "n_atoms": 8,
+  "n_configs": 3,
+  "openmm_version": "8.6.1",
+  "periodic": false,
+  "perturbation": {
+    "applies_to": "all three components for every config >= 1; amplitude 0.02*config nm",
+    "formula": "q[d,i] += 0.02*config*sin(0.37*(i+1) + 1.1*(d+1))",
+    "index_base": "i is 0-based; d is the Cartesian component (0=x, 1=y, 2=z); config = 1,2,...",
+    "note": "config 0 is unperturbed. config 1 uses amplitude 0.02 nm, config 2 uses 0.04 nm, etc., in double precision. No coordinates are stored.",
+    "units": "nm"
+  },
+  "platform": "CPU",
+  "platform_properties": {
+    "DeterministicForces": "true",
+    "Threads": "1"
+  },
+  "protocol": {
+    "constraints": "none",
+    "cutoff_nm": null,
+    "dispersion_correction": false,
+    "ewald_error_tolerance": null,
+    "nonbonded": "NoCutoff",
+    "remove_cmmotion": false,
+    "rigid_water": false
+  },
+  "schema": "1.0.0",
+  "source": {
+    "coordinate_file": "wrappers/python/tests/systems/methanol_ions.pdb",
+    "coordinate_sha256": "7e55e9ecabda1d9d61c3c0528f5140d759011bae673b6f8ffc70d091334cf6fc",
+    "force_field": "CHARMM36 CGenFF + water/methanol + water/ions toppar (OpenMM test-suite data)",
+    "parameter_file": "wrappers/python/tests/systems/par_all36_cgenff.prm wrappers/python/tests/systems/water_methanol.prm wrappers/python/tests/systems/toppar_water_ions.str",
+    "parameter_files": [
+      "wrappers/python/tests/systems/par_all36_cgenff.prm",
+      "wrappers/python/tests/systems/water_methanol.prm",
+      "wrappers/python/tests/systems/toppar_water_ions.str"
+    ],
+    "parameter_sha256": [
+      "46a5ba766eb78af01f7bb67f65d2bba674aaa08c8f3bba11440c6c4688d8f5d0",
+      "88970a7767c5184cd59d8ca270a2b4d5c2698c0dcea3a54f5ae89f6ba4c7b6ac",
+      "dc00380cd8696aa89d98821dee31887bbf1d1af5d3ed06834f56ecbe239baa1e"
+    ],
+    "psf_file": "wrappers/python/tests/systems/methanol_ions.psf",
+    "psf_sha256": "dc4a8c0964680543c49e6ae406a6db58e64eea8a11da3928e83d7463f1298399"
+  }
+}
