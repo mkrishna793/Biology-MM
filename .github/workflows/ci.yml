@@ -1,0 +1,265 @@
+name: Biology-MM Cross-Platform CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  linux-cpu-vulkan:
+    name: Linux x86_64 (CPU + Vulkan)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install C++ toolchain and glslang
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake g++ glslang-tools
+
+      - name: Build native C++ and Vulkan backends
+        run: |
+          cmake -S native -B native/build
+          cmake --build native/build -j
+          test -f julia/lib/libtrium_mm_bridge.so
+          test -f julia/lib/libtrium_gpu_vulkan.so
+          test -f julia/lib/shaders/xbt_lj_dsf_csr.spv
+          test -f julia/lib/shaders/xbt_ternary_matvec.spv
+          test -f julia/lib/shaders/xbt_msm_stencil27.spv
+
+      - name: Setup Julia 1.13.3
+        uses: julia-actions/setup-julia@v2
+        with:
+          version: "1.13.3"
+
+      - name: Instantiate Julia project
+        run: julia --project=julia -e 'using Pkg; Pkg.instantiate()'
+
+      - name: Setup Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Python dependencies and biology-mm SDK
+        run: |
+          python -m pip install --upgrade pip
+          pip install numpy pytest parmed
+          pip install --no-deps -e ./python
+          echo "CHEM_PYTHON=$(python -c 'import sys; print(sys.executable)')" >> "$GITHUB_ENV"
+
+      - name: Run algebraic experiment demonstrator
+        run: python experiment/test_group_harmonic.py
+
+      - name: Run Julia core test suite (57 suites)
+        run: julia --project=julia julia/test/run_all.jl
+
+      - name: Run Julia multithreaded tests (-t 4)
+        run: julia -t 4 --project=julia julia/test/test_threading.jl
+
+      - name: Run chemistry extractor and fixture tests
+        run: pytest -q chemistry/tools
+
+      - name: Run Python SDK tests
+        run: pytest -q python/tests/test_biology_mm_sdk.py
+
+  windows-cpu-vulkan:
+    name: Windows x86_64 (MinGW-w64 UCRT64 + Vulkan)
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup MSYS2 UCRT64 toolchain
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: true
+          install: >-
+            mingw-w64-ucrt-x86_64-gcc
+            mingw-w64-ucrt-x86_64-cmake
+            mingw-w64-ucrt-x86_64-ninja
+
+      - name: Build native C++ and Vulkan DLLs
+        run: |
+          cmake -S native -B native/build -G Ninja
+          cmake --build native/build -j
+          test -f julia/lib/libtrium_mm_bridge.dll
+          test -f julia/lib/libtrium_gpu_vulkan.dll
+
+      - name: Add UCRT64 runtime DLLs to PATH
+        shell: pwsh
+        run: echo "C:\msys64\ucrt64\bin" >> $env:GITHUB_PATH
+
+      - name: Setup Julia 1.13.3
+        uses: julia-actions/setup-julia@v2
+        with:
+          version: "1.13.3"
+
+      - name: Instantiate Julia project
+        shell: pwsh
+        run: julia --project=julia -e 'using Pkg; Pkg.instantiate()'
+
+      - name: Setup Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Python dependencies and biology-mm SDK
+        shell: pwsh
+        run: |
+          python -m pip install --upgrade pip
+          pip install numpy pytest parmed
+          pip install --no-deps -e ./python
+          "CHEM_PYTHON=$(python -c 'import sys; print(sys.executable)')" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Run algebraic experiment demonstrator
+        shell: pwsh
+        run: python experiment/test_group_harmonic.py
+
+      - name: Run Julia core test suite (57 suites)
+        shell: pwsh
+        run: julia --project=julia julia/test/run_all.jl
+
+      - name: Run Julia multithreaded tests (-t 4)
+        shell: pwsh
+        run: julia -t 4 --project=julia julia/test/test_threading.jl
+
+      - name: Run chemistry extractor and fixture tests
+        shell: pwsh
+        run: pytest -q chemistry/tools
+
+      - name: Run Python SDK tests
+        shell: pwsh
+        run: pytest -q python/tests/test_biology_mm_sdk.py
+
+  macos-apple-silicon:
+    name: macOS Apple Silicon (Metal 4 + NEON + Vulkan)
+    runs-on: macos-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Build native Metal, NEON, and Vulkan dylibs
+        run: |
+          cmake -S native -B native/build
+          cmake --build native/build -j
+          test -f julia/lib/libtrium_mm_bridge.dylib
+          test -f julia/lib/libtrium_gpu_bridge.dylib
+          test -f julia/lib/libtrium_gpu_vulkan.dylib
+
+      - name: Setup Julia 1.13.3
+        uses: julia-actions/setup-julia@v2
+        with:
+          version: "1.13.3"
+
+      - name: Instantiate Julia project
+        run: julia --project=julia -e 'using Pkg; Pkg.instantiate()'
+
+      - name: Setup Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Python dependencies and biology-mm SDK
+        run: |
+          python -m pip install --upgrade pip
+          pip install numpy pytest parmed
+          pip install --no-deps -e ./python
+          echo "CHEM_PYTHON=$(python -c 'import sys; print(sys.executable)')" >> "$GITHUB_ENV"
+
+      - name: Run algebraic experiment demonstrator
+        run: python experiment/test_group_harmonic.py
+
+      - name: Run Julia core test suite (57 suites)
+        run: julia --project=julia julia/test/run_all.jl
+
+      - name: Run Julia multithreaded tests (-t 4)
+        run: julia -t 4 --project=julia julia/test/test_threading.jl
+
+      - name: Run chemistry extractor and fixture tests
+        run: pytest -q chemistry/tools
+
+      - name: Run Python SDK tests
+        run: pytest -q python/tests/test_biology_mm_sdk.py
+
+  formal-proofs:
+    name: Formal Proofs (Lean 4 & Rocq)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install elan and Lean toolchain
+        run: |
+          TOOLCHAIN="$(cat lean/lean-toolchain)"
+          curl -sSfL https://raw.githubusercontent.com/leanprover/elan/master/elan-init.sh | sh -s -- -y --default-toolchain "$TOOLCHAIN"
+          echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
+
+      - name: Build Lean 4 proofs and audit axioms (13 classical + 19 ternary/weighing)
+        run: |
+          cd lean
+          lake build
+
+          cat > /tmp/lean-audit.lean <<'EOF'
+          import Foundation
+          open Foundation
+          #print axioms Foundation.pairSum_decomp
+          #print axioms Foundation.forceOnA_eq
+          #print axioms Foundation.forceOnA_injective
+          #print axioms Foundation.total_force_zero
+          #print axioms Foundation.harmEnergy_pert
+          #print axioms Foundation.pairSum_decomp_general
+          #print axioms Foundation.shadow_invariant
+          #print axioms Foundation.verlet_energy_defect
+          #print axioms Foundation.energy_is_shadow_plus_defect
+          #print axioms Foundation.shadow_coeff_pos
+          #print axioms Foundation.shadow_energy_band
+          #print axioms Foundation.energy_band_abs
+          #print axioms Foundation.energy_after_step_eq
+          EOF
+          lake env lean /tmp/lean-audit.lean > /tmp/lean-audit.txt 2>&1
+          cat /tmp/lean-audit.txt
+          if grep -q "sorryAx" /tmp/lean-audit.txt; then exit 1; fi
+          N_STD=$(grep -c "propext, Classical.choice, Quot.sound" /tmp/lean-audit.txt)
+          test "$N_STD" -eq 13
+
+          cat > /tmp/lean-ternary-audit.lean <<'EOF'
+          import Foundation
+          open Foundation
+          #print axioms Foundation.trit_neg_involutive
+          #print axioms Foundation.dual_rail_neg_involutive
+          #print axioms Foundation.btha_conservation
+          #print axioms Foundation.btfa_conservation
+          #print axioms Foundation.carry_free_step_conservation
+          #print axioms Foundation.verletKDK_exact_reversible
+          #print axioms Foundation.verletKDK_n_steps_reversible
+          #print axioms Foundation.hamiltonian_energy_conservation
+          #print axioms Foundation.cw4_valid
+          #print axioms Foundation.cw7_valid
+          #print axioms Foundation.cw13_valid
+          #print axioms Foundation.cw4_orthogonal
+          #print axioms Foundation.cw7_orthogonal
+          #print axioms Foundation.cw13_orthogonal
+          #print axioms Foundation.weighing_left_inverse
+          #print axioms Foundation.weighing_parseval_energy
+          #print axioms Foundation.radix3_compression_sum_eq
+          #print axioms Foundation.farkas_refutation_sound
+          #print axioms Foundation.amo_steric_exclusion_sound
+          EOF
+          lake env lean /tmp/lean-ternary-audit.lean > /tmp/lean-ternary-audit.txt 2>&1
+          cat /tmp/lean-ternary-audit.txt
+          if grep -qE "sorryAx|Lean\.ofReduceBool" /tmp/lean-ternary-audit.txt; then exit 1; fi
+          N_TERNARY=$(grep -cE "depends on axioms:|does not depend on any axioms" /tmp/lean-ternary-audit.txt)
+          test "$N_TERNARY" -eq 19
+
+      - name: Install Coq / Rocq and compile Core.v
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y coq
+          coqc -o /tmp/Core.vo rocq/Core.v
