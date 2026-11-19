@@ -1,0 +1,242 @@
+#version 450
+// =============================================================================
+// Trium-XBT Portable Vulkan Compute Shader: Full Symmetric CSR LJ + DSF Coulomb
+// =============================================================================
+// Target: SPIR-V 1.0+ across NVIDIA, AMD RDNA, Intel Arc, Qualcomm Adreno,
+//         ARM Mali, and Apple MoltenVK.
+//
+// Zero-atomic per-atom evaluation:
+//   Each invocation evaluates all symmetric neighbor edges [row_ptr[i], row_ptr[i+1])
+//   for atom i and writes exclusively to out_forces[i], out_u_half[i], out_vir9[9*i..+8].
+//   Supports NoBox (0), OrthorhombicBox (1), and TriclinicBox (2), LFS LJ, and
+//   4096-bin midpoint degree-3 Taylor DSF Coulomb table.
+// =============================================================================
+
+layout(constant_id = 0) const uint WORKGROUP_SIZE = 64u;
+layout(local_size_x = 64, local_size_y = 1, local_size_z = 1) in;
+layout(local_size_x_id = 1) in;
+
+layout(set = 0, binding = 0) readonly buffer BufQ {
+    vec4 q_f4[];       // xyz = position, w = partial charge
+};
+
+layout(set = 0, binding = 1) readonly buffer BufSigEps {
+    vec2 sig_eps[];    // x = 0.5 * sigma, y = sqrt(epsilon)
+};
+
+layout(set = 0, binding = 2) readonly buffer BufRowPtr {
+    uint sym_row_ptr[];
+};
+
+layout(set = 0, binding = 3) readonly buffer BufColIdx {
+    uint sym_col_idx[];
+};
+
+layout(set = 0, binding = 4) readonly buffer BufWLJ {
+    float sym_wlj[];
+};
+
+layout(set = 0, binding = 5) readonly buffer BufWCoul {
+    float sym_wcoul[];
+};
+
+layout(set = 0, binding = 6) readonly buffer BufDsfTable {
+    vec4 dsf_table[];  // 4096 midpoint degree-3 Taylor bins: (c0, c1, c2, c3)
+};
+
+layout(set = 0, binding = 7) writeonly buffer BufOutForces {
+    vec4 out_forces[]; // xyz = force on atom i, w = 0.0
+};
+
+layout(set = 0, binding = 8) writeonly buffer BufOutUHalf {
+    float out_u_half[]; // 0.5 * sum_j u_ij
+};
+
+layout(set = 0, binding = 9) writeonly buffer BufOutVir9 {
+    float out_vir9[];   // 9 floats per atom: 0.5 * sum_j (-f_a) * w_b
+};
+
+layout(std140, set = 0, binding = 10) uniform BoxUBO {
+    vec4 box_L;        // xyz = (L0, L1, L2) for orthorhombic
+    vec4 box_invL;     // xyz = (1/L0, 1/L1, 1/L2)
+    vec4 H_col0;       // column 0 of 3x3 box matrix H
+    vec4 H_col1;       // column 1 of 3x3 box matrix H
+    vec4 H_col2;       // column 2 of 3x3 box matrix H
+    vec4 Hinv_col0;    // column 0 of 3x3 inverse box matrix H^-1
+    vec4 Hinv_col1;    // column 1 of 3x3 inverse box matrix H^-1
+    vec4 Hinv_col2;    // column 2 of 3x3 inverse box matrix H^-1
+} ubo;
+
+layout(push_constant) uniform PushConstants {
+    uint n_atoms;
+    uint box_mode;     // 0 = NoBox, 1 = OrthorhombicBox, 2 = TriclinicBox
+    uint flags;        // bit 0: do_lj, bit 1: do_coul, bit 2: use_lfs, bit 3: need_virial
+    uint _pad0;
+    float rc2;
+    float rcut;
+    float inv_rc;
+    float inv_rc2;
+    float du;
+    float inv_du;
+    float coulomb_prefactor;
+    float Arc;
+    float Brc;
+} pc;
+
+void apply_mic(vec3 d0, bool need_virial, out vec3 d_out, out vec3 w_out) {
+    if (pc.box_mode == 0u) {
+        // NoBox
+        d_out = d0;
+        w_out = vec3(0.0);
+    } else if (pc.box_mode == 1u) {
+        // OrthorhombicBox
+        vec3 n_img = round(d0 * ubo.box_invL.xyz);
+        d_out = d0 - ubo.box_L.xyz * n_img;
+        w_out = need_virial ? (d_out * ubo.box_invL.xyz) : vec3(0.0);
+    } else {
+        // TriclinicBox: exact 27-cell search around nearest integer fractional shift
+        mat3 H = mat3(ubo.H_col0.xyz, ubo.H_col1.xyz, ubo.H_col2.xyz);
+        mat3 Hinv = mat3(ubo.Hinv_col0.xyz, ubo.Hinv_col1.xyz, ubo.Hinv_col2.xyz);
+
+        vec3 f = Hinv * d0;
+        vec3 n0 = round(f);
+        vec3 best_d = d0 - (H * n0);
+        float best2 = dot(best_d, best_d);
+
+        for (int dc = -1; dc <= 1; ++dc) {
+            for (int db = -1; db <= 1; ++db) {
+                for (int da = -1; da <= 1; ++da) {
+                    if (da == 0 && db == 0 && dc == 0) continue;
+                    vec3 n_cand = n0 + vec3(float(da), float(db), float(dc));
+                    vec3 cand = d0 - (H * n_cand);
+                    float c2 = dot(cand, cand);
+                    if (c2 < best2) {
+                        best2 = c2;
+                        best_d = cand;
+                    }
+                }
+            }
+        }
+        d_out = best_d;
+        w_out = need_virial ? (Hinv * best_d) : vec3(0.0);
+    }
+}
+
+void main() {
+    if (WORKGROUP_SIZE == 0u) return;
+
+    uint i = gl_GlobalInvocationID.x;
+    if (i >= pc.n_atoms) return;
+
+    bool do_lj = (pc.flags & 1u) != 0u;
+    bool do_coul = (pc.flags & 2u) != 0u;
+    bool use_lfs = (pc.flags & 4u) != 0u;
+    bool need_virial = ((pc.flags & 8u) != 0u) && (pc.box_mode != 0u);
+
+    vec4 qi_4 = q_f4[i];
+    vec3 ri = qi_4.xyz;
+    float q_i = qi_4.w;
+    vec2 se_i = sig_eps[i];
+
+    uint edge_begin = sym_row_ptr[i];
+    uint edge_end = sym_row_ptr[i + 1u];
+
+    vec3 f_acc = vec3(0.0);
+    float u_half = 0.0;
+    float vir[9];
+    for (int m = 0; m < 9; ++m) {
+        vir[m] = 0.0;
+    }
+
+    for (uint e = edge_begin; e < edge_end; ++e) {
+        uint j = sym_col_idx[e];
+        vec4 qj_4 = q_f4[j];
+        vec3 d0 = ri - qj_4.xyz;
+
+        vec3 d, w;
+        apply_mic(d0, need_virial, d, w);
+
+        float r2 = dot(d, d);
+        if (r2 >= pc.rc2 || r2 < 1e-12) continue;
+
+        float dist = sqrt(r2);
+        float inv_r = 1.0 / dist;
+        float inv_r2 = 1.0 / r2;
+
+        float u_pair = 0.0;
+        float c_total = 0.0;
+
+        float w_lj = sym_wlj[e];
+        if (do_lj && w_lj != 0.0) {
+            vec2 se_j = sig_eps[j];
+            float eij = se_i.y * se_j.y;
+            if (eij > 0.0) {
+                float sij = se_i.x + se_j.x;
+                if (sij > 0.0) {
+                    float sij2 = sij * sij;
+                    float s2 = sij2 * inv_r2;
+                    float s6 = s2 * s2 * s2;
+                    float s12 = s6 * s6;
+
+                    float s2c = sij2 * pc.inv_rc2;
+                    float s6c = s2c * s2c * s2c;
+                    float s12c = s6c * s6c;
+
+                    float u_lj = 4.0 * eij * ((s12 - s6) - (s12c - s6c));
+                    float c_lj = 24.0 * eij * (2.0 * s12 - s6) * inv_r2;
+
+                    if (use_lfs) {
+                        float duc = 24.0 * eij * (s6c - 2.0 * s12c) * pc.inv_rc;
+                        u_lj -= duc * (dist - pc.rcut);
+                        c_lj += duc * inv_r;
+                    }
+
+                    u_pair += w_lj * u_lj;
+                    c_total += w_lj * c_lj;
+                }
+            }
+        }
+
+        float w_coul = sym_wcoul[e];
+        if (do_coul && w_coul != 0.0) {
+            float qij = q_i * qj_4.w;
+            if (qij != 0.0) {
+                float kq = w_coul * pc.coulomb_prefactor * qij;
+                int k = clamp(int(r2 * pc.inv_du), 0, 4095);
+                float dt = r2 - (float(k) + 0.5) * pc.du;
+                vec4 b = dsf_table[k];
+                float phi0 = b.x + dt * (b.y + dt * (b.z + dt * b.w));
+                float dphi0 = b.y + dt * (2.0 * b.z + dt * 3.0 * b.w);
+
+                u_pair += kq * ((inv_r - phi0) - pc.Brc + pc.Arc * dist);
+                c_total += kq * (inv_r2 * inv_r + 2.0 * dphi0 - pc.Arc * inv_r);
+            }
+        }
+
+        u_half += 0.5 * u_pair;
+        vec3 f_ij = c_total * d;
+        f_acc += f_ij;
+
+        if (need_virial) {
+            vec3 g = -0.5 * f_ij;
+            vir[0] += g.x * w.x;
+            vir[1] += g.y * w.x;
+            vir[2] += g.z * w.x;
+            vir[3] += g.x * w.y;
+            vir[4] += g.y * w.y;
+            vir[5] += g.z * w.y;
+            vir[6] += g.x * w.z;
+            vir[7] += g.y * w.z;
+            vir[8] += g.z * w.z;
+        }
+    }
+
+    out_forces[i] = vec4(f_acc, 0.0);
+    out_u_half[i] = u_half;
+    if ((pc.flags & 8u) != 0u) {
+        uint vbase = 9u * i;
+        for (int m = 0; m < 9; ++m) {
+            out_vir9[vbase + uint(m)] = vir[m];
+        }
+    }
+}

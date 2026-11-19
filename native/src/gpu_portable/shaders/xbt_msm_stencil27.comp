@@ -1,0 +1,74 @@
+#version 450
+// =============================================================================
+// Trium-XBT Portable Vulkan Compute Shader: Radix-3 27-Point MSM Stencil
+// =============================================================================
+// Evaluates periodic 3D convolution on an Ml x Ml x Ml radix-3 grid using
+// the 27-point balanced ternary tryte stencil (dx, dy, dz) in {-1, 0, +1}^3:
+//   tryte_index0 = (dx + 1) + 3 * (dy + 1) + 9 * (dz + 1) in [0..26].
+// =============================================================================
+
+layout(constant_id = 0) const uint WORKGROUP_SIZE = 4u;
+layout(local_size_x = 4, local_size_y = 4, local_size_z = 4) in;
+
+layout(set = 0, binding = 0) readonly buffer BufQIn {
+    float q_in[];
+};
+
+layout(set = 0, binding = 1) readonly buffer BufW27 {
+    float w27[];
+};
+
+layout(set = 0, binding = 2) buffer BufPhiOut {
+    float phi_out[];
+};
+
+layout(push_constant) uniform PushConstants {
+    uint Ml;
+    uint accumulate;   // 0 = overwrite phi_out, 1 = add to phi_out
+} pc;
+
+void main() {
+    if (WORKGROUP_SIZE == 0u) return;
+
+    uvec3 gid = gl_GlobalInvocationID;
+    uint M = pc.Ml;
+    if (gid.x >= M || gid.y >= M || gid.z >= M || M == 0u) return;
+
+    uint mx[3];
+    uint my[3];
+    uint mz[3];
+    mx[0] = (gid.x + M - 1u) % M;
+    mx[1] = gid.x;
+    mx[2] = (gid.x + 1u) % M;
+
+    my[0] = (gid.y + M - 1u) % M;
+    my[1] = gid.y;
+    my[2] = (gid.y + 1u) % M;
+
+    mz[0] = (gid.z + M - 1u) % M;
+    mz[1] = gid.z;
+    mz[2] = (gid.z + 1u) % M;
+
+    uint stride2 = M;
+    uint stride3 = M * M;
+
+    float acc = 0.0;
+    for (uint dz = 0u; dz < 3u; ++dz) {
+        uint bz = mz[dz] * stride3;
+        uint w_z = dz * 9u;
+        for (uint dy = 0u; dy < 3u; ++dy) {
+            uint byz = bz + my[dy] * stride2;
+            uint w_yz = w_z + dy * 3u;
+            acc += w27[w_yz + 0u] * q_in[byz + mx[0]];
+            acc += w27[w_yz + 1u] * q_in[byz + mx[1]];
+            acc += w27[w_yz + 2u] * q_in[byz + mx[2]];
+        }
+    }
+
+    uint out_idx = gid.x + stride2 * gid.y + stride3 * gid.z;
+    if (pc.accumulate != 0u) {
+        phi_out[out_idx] += acc;
+    } else {
+        phi_out[out_idx] = acc;
+    }
+}
