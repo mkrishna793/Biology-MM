@@ -23,7 +23,15 @@ from .engine_core import (
     SimulationSession,
     compile_safe_radial_expr,
 )
-from .mvs_exporter import export_mvsj, export_mvsx_bytes
+try:
+    from .mvs_exporter import export_mvsj, export_mvsx_bytes
+    _HAS_MVS_EXPORTER = True
+except ImportError:
+    export_mvsj = None  # type: ignore[assignment]
+    export_mvsx_bytes = None  # type: ignore[assignment]
+    _HAS_MVS_EXPORTER = False
+
+from .multiscale import expand_symmetry_assembly, unpack_tsym_binary
 from .presets import PRESET_DEFINITIONS, create_preset_session, get_preset, list_presets
 from .sandbox import execute_user_code
 from .structure_loader import load_structure_from_bytes
@@ -89,6 +97,25 @@ class CodeRunPayload(BaseModel):
     code: str
     timeout_s: float = Field(10.0, gt=0.1, le=30.0)
     active_structure: Optional[ActiveStructurePayload] = None
+
+
+class RelaxPayload(BaseModel):
+    max_steps: int = Field(40, ge=1, le=500)
+    max_force_cap: float = Field(5000.0, gt=0.0)
+    alpha_sc: float = Field(0.5, gt=0.0)
+    lam: float = Field(0.5, gt=0.0, le=1.0)
+
+
+class MultiscalePayload(BaseModel):
+    center_ang: List[float]
+    aa_radius_ang: float = Field(15.0, ge=0.0)
+    cg_radius_ang: float = Field(35.0, ge=0.0)
+
+
+class SteerAtomPayload(BaseModel):
+    atom_index: Optional[int] = None
+    target_ang: Optional[List[float]] = None
+    k_spring: float = Field(500.0, ge=0.0)
 
 
 _ELEMENT_MASSES: Dict[str, float] = {
@@ -240,7 +267,7 @@ def create_app(dist_dir: Optional[Path] = None) -> FastAPI:
             "palettes": list(PALETTE_NAMES),
             "presets_count": len(PRESET_DEFINITIONS),
             "max_interactive_atoms": 262_144,
-            "supports_mvsx": True,
+            "supports_mvsx": _HAS_MVS_EXPORTER,
         }
 
     @application.get("/api/presets")
@@ -364,6 +391,89 @@ def create_app(dist_dir: Optional[Path] = None) -> FastAPI:
             "metrics": metrics,
         }
 
+    @application.post("/api/sessions/create-from-symmetry")
+    async def create_session_from_symmetry(request: Request) -> Dict[str, Any]:
+        """
+        Ingest a compact 4-byte-aligned `TSYM` biological symmetry assembly packet,
+        expand the asymmetric unit across all 4x4 affine transforms in vectorized NumPy,
+        relax steric clashes with Beutler soft-core LJ, and register a live session.
+        """
+        body = await request.body()
+        try:
+            sym = unpack_tsym_binary(body)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+        expanded_coords_ang, expanded_elements = expand_symmetry_assembly(
+            sym.asu_coords_ang,
+            sym.asu_elements,
+            sym.transforms_4x4,
+        )
+        n_atoms = int(expanded_coords_ang.shape[0])
+        if n_atoms == 0:
+            raise HTTPException(status_code=400, detail="Symmetry expansion produced 0 atoms")
+
+        pos_nm = expanded_coords_ang.astype(np.float64) * 0.1
+        masses = np.array([_ELEMENT_MASSES.get(s.upper(), 12.011) for s in expanded_elements], dtype=np.float64)
+        charges = np.zeros(n_atoms, dtype=np.float64)
+
+        margin = 0.9
+        min_xyz = np.min(pos_nm, axis=0)
+        pos_shifted = pos_nm - min_xyz
+        span = np.ptp(pos_shifted, axis=0) if n_atoms > 1 else np.zeros(3, dtype=np.float64)
+        bx, by, bz = sym.box_ang
+        if bx > 0 and by > 0 and bz > 0:
+            box_nm = (float(bx) * 0.1, float(by) * 0.1, float(bz) * 0.1)
+        else:
+            box_nm = (
+                max(float(span[0]) + 2 * margin, 2.8),
+                max(float(span[1]) + 2 * margin, 2.8),
+                max(float(span[2]) + 2 * margin, 2.8),
+            )
+        offset_pos = 0.5 * (np.array(box_nm) - span)
+        pos_nm = pos_shifted + offset_pos
+
+        sys = AtomicSystem(
+            positions=pos_nm,
+            masses=masses,
+            charges=charges,
+            box_lengths=box_nm,
+            names=expanded_elements,
+            bonds=[],
+            units="md",
+        )
+        sim = SimulationSession(
+            sys,
+            mode=sym.mode or "metal_verlet",
+            dt=sym.dt if sym.dt > 0 else 0.002,
+            temperature=sym.temperature if sym.temperature > 0 else 300.0,
+            rcut=1.0,
+            alpha_dsf=0.0,
+            structure_metadata={
+                "source": "molstar-symmetry",
+                "n_asu_atoms": sym.n_asu_atoms,
+                "n_transforms": sym.n_transforms,
+                "atom_count": n_atoms,
+            },
+        )
+        relaxation = sim.relax_clashes()
+        record = manager.register_session(
+            sim,
+            default_channel="force-magnitude",
+            default_palette="plasma",
+        )
+        metrics = sim.get_metrics()
+        metrics["session_id"] = record.session_id
+        return {
+            "session_id": record.session_id,
+            "title": sym.title,
+            "n_asu_atoms": sym.n_asu_atoms,
+            "n_transforms": sym.n_transforms,
+            "n_atoms": n_atoms,
+            "relaxation": relaxation,
+            "metrics": metrics,
+        }
+
     @application.post("/api/sessions/from-structure")
     async def create_session_from_structure(payload: CreateFromStructurePayload) -> Dict[str, Any]:
         sys, meta = _build_system_from_structure_payload(payload.structure)
@@ -481,6 +591,56 @@ def create_app(dist_dir: Optional[Path] = None) -> FastAPI:
         manager.push_current_frame(record, metrics=metrics, reversed_step=False)
         return metrics
 
+    @application.post("/api/sessions/{sid}/relax")
+    async def relax_session(sid: str, payload: Optional[RelaxPayload] = None) -> Dict[str, Any]:
+        record = _require_session(manager, sid)
+        p = payload or RelaxPayload()
+        report = record.session.relax_clashes(
+            max_steps=p.max_steps,
+            max_force_cap=p.max_force_cap,
+            alpha_sc=p.alpha_sc,
+            lam=p.lam,
+        )
+        metrics = record.session.get_metrics()
+        metrics["session_id"] = sid
+        manager.push_current_frame(record, metrics=metrics, reversed_step=False)
+        return {"session_id": sid, "relaxation": report, "metrics": metrics}
+
+    @application.post("/api/sessions/{sid}/multiscale")
+    async def set_session_multiscale(sid: str, payload: MultiscalePayload) -> Dict[str, Any]:
+        record = _require_session(manager, sid)
+        if len(payload.center_ang) != 3:
+            raise HTTPException(status_code=400, detail="center_ang must be a 3-element list [x, y, z]")
+        summary = record.session.set_focus_zone(
+            center_ang=payload.center_ang,
+            aa_radius_ang=payload.aa_radius_ang,
+            cg_radius_ang=payload.cg_radius_ang,
+        )
+        metrics = record.session.get_metrics()
+        metrics["session_id"] = sid
+        manager.push_current_frame(record, metrics=metrics, reversed_step=False)
+        return {"session_id": sid, "multiscale": summary, "metrics": metrics}
+
+    @application.post("/api/sessions/{sid}/steer-atom")
+    async def steer_session_atom(sid: str, payload: SteerAtomPayload) -> Dict[str, Any]:
+        record = _require_session(manager, sid)
+        if payload.target_ang is not None and len(payload.target_ang) != 3:
+            raise HTTPException(status_code=400, detail="target_ang must be a 3-element list [x, y, z]")
+        try:
+            smd = record.session.steer_atom(
+                atom_index=payload.atom_index,
+                target_ang=payload.target_ang,
+                k_spring=payload.k_spring,
+            )
+        except IndexError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        metrics = record.session.get_metrics()
+        metrics["session_id"] = sid
+        manager.push_current_frame(record, metrics=metrics, reversed_step=False)
+        return {"session_id": sid, "smd": smd, "metrics": metrics}
+
     @application.post("/api/sessions/{sid}/custom-physics")
     async def apply_custom_physics(sid: str, payload: CustomPhysicsPayload) -> Dict[str, Any]:
         record = _require_session(manager, sid)
@@ -556,6 +716,8 @@ def create_app(dist_dir: Optional[Path] = None) -> FastAPI:
         channel: Optional[str] = Query(None),
         palette: Optional[str] = Query(None),
     ) -> JSONResponse:
+        if not _HAS_MVS_EXPORTER or export_mvsj is None:
+            raise HTTPException(status_code=501, detail="MolViewSpec export unavailable: 'molviewspec' is not installed")
         record = _require_session(manager, sid)
         ch = channel or record.active_channel
         pal = palette or record.palette
@@ -577,6 +739,8 @@ def create_app(dist_dir: Optional[Path] = None) -> FastAPI:
         channel: Optional[str] = Query(None),
         palette: Optional[str] = Query(None),
     ) -> Response:
+        if not _HAS_MVS_EXPORTER or export_mvsx_bytes is None:
+            raise HTTPException(status_code=501, detail="MolViewSpec export unavailable: 'molviewspec' is not installed")
         record = _require_session(manager, sid)
         ch = channel or record.active_channel
         pal = palette or record.palette

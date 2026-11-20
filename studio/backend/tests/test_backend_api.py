@@ -111,7 +111,8 @@ def test_rest_api_full_lifecycle():
         cap = r_cap.json()
         assert cap["presets_count"] == 7
         assert cap["supports_mvsx"] is True
-        assert len(cap["channels"]) == 6
+        assert len(cap["channels"]) == 7
+        assert "multiscale-zone" in cap["channels"]
         assert len(cap["palettes"]) == 6
 
         r_presets = client.get("/api/presets")

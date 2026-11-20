@@ -29,7 +29,8 @@ export type PhysicsThemeName =
   | 'biology-mm-charge-potential'
   | 'biology-mm-bond-order'
   | 'biology-mm-atomic-stress'
-  | 'biology-mm-ternary-state';
+  | 'biology-mm-ternary-state'
+  | 'biology-mm-multiscale-zone';
 
 const PALETTE_LABELS: Record<PaletteName, string> = {
   plasma: 'Plasma',
@@ -127,6 +128,7 @@ interface PhysicsThemeSpec<Id extends PhysicsThemeName> {
   readonly defaultPalette: PaletteName;
   readonly defaultDomain?: [number, number];
   readonly isTernary?: boolean;
+  readonly isMultiscaleZone?: boolean;
 }
 
 function createPhysicsThemeProvider<Id extends PhysicsThemeName>(
@@ -153,6 +155,8 @@ function createPhysicsThemeProvider<Id extends PhysicsThemeName>(
         domain = props.domain.params as [number, number];
       } else if (spec.isTernary && attr.min >= -1 && attr.max <= 1) {
         domain = [-1, 1];
+      } else if (spec.isMultiscaleZone) {
+        domain = [0, 2];
       } else {
         domain = [attr.min, attr.max];
       }
@@ -164,6 +168,12 @@ function createPhysicsThemeProvider<Id extends PhysicsThemeName>(
           ['-1 (State -1)', samplePaletteColor(palette, 0)],
           ['0 (Neutral)', samplePaletteColor(palette, 0.5)],
           ['+1 (State +1)', samplePaletteColor(palette, 1)],
+        ]);
+      } else if (spec.isMultiscaleZone) {
+        legend = TableLegend([
+          ['0 (All-Atom)', samplePaletteColor(palette, 0)],
+          ['1 (Coarse-Grained)', samplePaletteColor(palette, 0.5)],
+          ['2 (Rigid Scaffold)', samplePaletteColor(palette, 1)],
         ]);
       } else {
         legend = ScaleLegend(formatDomainLabel(min), formatDomainLabel(max), [...getPaletteStopsColor(palette)]);
@@ -271,6 +281,16 @@ export const TernaryStateThemeProvider = createPhysicsThemeProvider({
   isTernary: true,
 });
 
+export const MultiscaleZoneThemeProvider = createPhysicsThemeProvider({
+  name: 'biology-mm-multiscale-zone',
+  label: 'Multiscale Zone',
+  description: 'Colors particles by multiscale resolution zone (0=All-Atom, 1=Coarse-Grained, 2=Rigid Scaffold).',
+  channel: 'multiscale-zone',
+  defaultPalette: 'ternary-triad',
+  defaultDomain: [0, 2],
+  isMultiscaleZone: true,
+});
+
 export const PHYSICS_THEME_PROVIDERS = [
   ForceMagnitudeThemeProvider,
   KineticTempThemeProvider,
@@ -278,6 +298,7 @@ export const PHYSICS_THEME_PROVIDERS = [
   BondOrderThemeProvider,
   AtomicStressThemeProvider,
   TernaryStateThemeProvider,
+  MultiscaleZoneThemeProvider,
 ] as const;
 
 export const PHYSICS_CHANNEL_TO_THEME: Readonly<Record<PhysicsChannelName, PhysicsThemeName>> = {
@@ -287,6 +308,7 @@ export const PHYSICS_CHANNEL_TO_THEME: Readonly<Record<PhysicsChannelName, Physi
   'bond-order': 'biology-mm-bond-order',
   'atomic-stress': 'biology-mm-atomic-stress',
   'ternary-state': 'biology-mm-ternary-state',
+  'multiscale-zone': 'biology-mm-multiscale-zone',
 };
 
 export const BIOLOGY_MM_SCALARS_KEY = '__biologyMmScalars';
@@ -305,7 +327,8 @@ export type StructurePhysicsThemeName =
   | 'biology-mm-struct-charge-potential'
   | 'biology-mm-struct-bond-order'
   | 'biology-mm-struct-atomic-stress'
-  | 'biology-mm-struct-ternary-state';
+  | 'biology-mm-struct-ternary-state'
+  | 'biology-mm-struct-multiscale-zone';
 
 interface StructurePhysicsThemeSpec<Id extends StructurePhysicsThemeName> {
   readonly name: Id;
@@ -315,6 +338,7 @@ interface StructurePhysicsThemeSpec<Id extends StructurePhysicsThemeName> {
   readonly defaultPalette: PaletteName;
   readonly defaultDomain?: [number, number];
   readonly isTernary?: boolean;
+  readonly isMultiscaleZone?: boolean;
 }
 
 function getModelScalarMap(model: any): BiologyMmStructureScalarMap | undefined {
@@ -351,6 +375,8 @@ function createStructurePhysicsThemeProvider<Id extends StructurePhysicsThemeNam
     } else if (entry) {
       if (spec.isTernary && entry.min >= -1 && entry.max <= 1) {
         domain = [-1, 1];
+      } else if (spec.isMultiscaleZone) {
+        domain = [0, 2];
       } else {
         domain = [entry.min, entry.max];
       }
@@ -381,7 +407,13 @@ function createStructurePhysicsThemeProvider<Id extends StructurePhysicsThemeNam
           ['0 (Neutral)', samplePaletteColor(palette, 0.5)],
           ['+1 (State +1)', samplePaletteColor(palette, 1)],
         ])
-      : ScaleLegend(formatDomainLabel(min), formatDomainLabel(max), [...getPaletteStopsColor(palette)]);
+      : spec.isMultiscaleZone
+        ? TableLegend([
+            ['0 (All-Atom)', samplePaletteColor(palette, 0)],
+            ['1 (Coarse-Grained)', samplePaletteColor(palette, 0.5)],
+            ['2 (Rigid Scaffold)', samplePaletteColor(palette, 1)],
+          ])
+        : ScaleLegend(formatDomainLabel(min), formatDomainLabel(max), [...getPaletteStopsColor(palette)]);
 
     function colorAt(unit: Unit, element: ElementIndex): Color {
       if (!Unit.isAtomic(unit)) return DEFAULT_FALLBACK_COLOR;
@@ -483,6 +515,16 @@ export const StructureTernaryStateThemeProvider = createStructurePhysicsThemePro
   isTernary: true,
 });
 
+export const StructureMultiscaleZoneThemeProvider = createStructurePhysicsThemeProvider({
+  name: 'biology-mm-struct-multiscale-zone',
+  label: 'Biology-MM: Multiscale Zone',
+  description: 'Colors structure atoms by multiscale resolution zone (0=All-Atom, 1=Coarse-Grained, 2=Rigid Scaffold).',
+  channel: 'multiscale-zone',
+  defaultPalette: 'ternary-triad',
+  defaultDomain: [0, 2],
+  isMultiscaleZone: true,
+});
+
 export const STRUCTURE_PHYSICS_THEME_PROVIDERS = [
   StructureForceMagnitudeThemeProvider,
   StructureKineticTempThemeProvider,
@@ -490,6 +532,7 @@ export const STRUCTURE_PHYSICS_THEME_PROVIDERS = [
   StructureBondOrderThemeProvider,
   StructureAtomicStressThemeProvider,
   StructureTernaryStateThemeProvider,
+  StructureMultiscaleZoneThemeProvider,
 ] as const;
 
 export const PHYSICS_CHANNEL_TO_STRUCT_THEME: Readonly<Record<PhysicsChannelName, StructurePhysicsThemeName>> = {
@@ -499,6 +542,7 @@ export const PHYSICS_CHANNEL_TO_STRUCT_THEME: Readonly<Record<PhysicsChannelName
   'bond-order': 'biology-mm-struct-bond-order',
   'atomic-stress': 'biology-mm-struct-atomic-stress',
   'ternary-state': 'biology-mm-struct-ternary-state',
+  'multiscale-zone': 'biology-mm-struct-multiscale-zone',
 };
 
 export interface PhysicsThemePluginTarget {

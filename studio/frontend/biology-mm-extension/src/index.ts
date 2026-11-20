@@ -60,6 +60,7 @@ export {
   BondOrderThemeProvider,
   AtomicStressThemeProvider,
   TernaryStateThemeProvider,
+  MultiscaleZoneThemeProvider,
   PHYSICS_THEME_PROVIDERS,
   PHYSICS_CHANNEL_TO_THEME,
   BIOLOGY_MM_SCALARS_KEY,
@@ -69,6 +70,7 @@ export {
   StructureBondOrderThemeProvider,
   StructureAtomicStressThemeProvider,
   StructureTernaryStateThemeProvider,
+  StructureMultiscaleZoneThemeProvider,
   STRUCTURE_PHYSICS_THEME_PROVIDERS,
   PHYSICS_CHANNEL_TO_STRUCT_THEME,
   createPhysicsColorThemeParams,
@@ -88,8 +90,15 @@ export {
   BiologyMmStructureBridge,
   extractActiveMolstarStructure,
   extractActiveMolstarStructureBinary,
+  extractActiveMolstarSymmetryBinary,
 } from './structure-bridge.js';
-export type { ExtractedEntityMeta, ExtractedMolstarStructure, ExtractedMolstarBinaryStructure } from './structure-bridge.js';
+export type {
+  ExtractedEntityMeta,
+  ExtractedMolstarStructure,
+  ExtractedMolstarBinaryStructure,
+  ExtractedMolstarSymmetryBinary,
+  SymmetryBinaryOptions,
+} from './structure-bridge.js';
 
 export {
   BiologyMmShapeProvider,

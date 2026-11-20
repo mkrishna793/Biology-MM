@@ -19,6 +19,7 @@ import {
   ChargePotentialThemeProvider,
   ForceMagnitudeThemeProvider,
   KineticTempThemeProvider,
+  MultiscaleZoneThemeProvider,
   PHYSICS_CHANNEL_TO_STRUCT_THEME,
   PHYSICS_CHANNEL_TO_THEME,
   PHYSICS_THEME_PROVIDERS,
@@ -141,14 +142,15 @@ describe('color-palettes', () => {
 });
 
 describe('physics-color-themes', () => {
-  it('exports all 6 providers and maps every PHYSICS_CHANNELS entry', () => {
-    expect(PHYSICS_THEME_PROVIDERS).toHaveLength(6);
+  it('exports all 7 providers and maps every PHYSICS_CHANNELS entry', () => {
+    expect(PHYSICS_THEME_PROVIDERS).toHaveLength(7);
     expect(ForceMagnitudeThemeProvider.name).toBe('biology-mm-force-magnitude');
     expect(KineticTempThemeProvider.name).toBe('biology-mm-kinetic-temp');
     expect(ChargePotentialThemeProvider.name).toBe('biology-mm-charge-potential');
     expect(BondOrderThemeProvider.name).toBe('biology-mm-bond-order');
     expect(AtomicStressThemeProvider.name).toBe('biology-mm-atomic-stress');
     expect(TernaryStateThemeProvider.name).toBe('biology-mm-ternary-state');
+    expect(MultiscaleZoneThemeProvider.name).toBe('biology-mm-multiscale-zone');
 
     for (const ch of PHYSICS_CHANNELS) {
       const themeName = PHYSICS_CHANNEL_TO_THEME[ch];
@@ -268,9 +270,9 @@ describe('physics-color-themes', () => {
       expect(registry.has(provider)).toBe(true);
       expect(registry.has(provider.name)).toBe(true);
     }
-    expect(registry.list.length).toBe(6);
+    expect(registry.list.length).toBe(7);
 
-    // Calling unregister1 removes all 6 even after a second idempotent register call
+    // Calling unregister1 removes all 7 even after a second idempotent register call
     unregister1();
     expect(registry.list.length).toBe(0);
 
@@ -291,8 +293,8 @@ describe('physics-color-themes', () => {
     };
 
     const unregister = registerPhysicsColorThemes(mockPlugin);
-    expect(particleRegistry.list.length).toBe(6);
-    expect(structureRegistry.list.length).toBe(6);
+    expect(particleRegistry.list.length).toBe(7);
+    expect(structureRegistry.list.length).toBe(7);
 
     for (const provider of STRUCTURE_PHYSICS_THEME_PROVIDERS) {
       expect(structureRegistry.has(provider)).toBe(true);

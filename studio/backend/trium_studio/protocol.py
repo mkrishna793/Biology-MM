@@ -270,9 +270,14 @@ def pack_frame_tile_patch(
     parts = [H.tobytes(order="C"), idx.tobytes()]
     if use_int16:
         flags |= FLAG_INT16_FRACTIONAL
-        parts.append(encode_int16_fractional(pts, H).tobytes(order="C"))
+        q16_bytes = encode_int16_fractional(pts, H).tobytes(order="C") if k > 0 else b""
+        parts.append(q16_bytes)
+        # Strict 4-byte alignment padding before float32 scalars / packet end
+        pad_len = (-len(q16_bytes)) % 4
+        if pad_len:
+            parts.append(b"\x00" * pad_len)
     else:
-        parts.append(pts.tobytes(order="C"))
+        parts.append(pts.tobytes(order="C") if k > 0 else b"")
 
     s_min, s_max = 0.0, 0.0
     if scalars is not None:
@@ -287,6 +292,59 @@ def pack_frame_tile_patch(
     payload = b"".join(parts)
     meta = ((int(tile_id) & 0xFFFFFF) << 8) | (int(scalar_channel) & 0xFF)
     return pack_header(MSG_FRAME_TILE_PATCH, flags, frame_id, k, s_min, s_max, sim_time_ps, len(payload), reserved=meta) + payload
+
+
+def pack_dirty_tile_delta(
+    dirty_indices: np.ndarray,
+    coords_ang: np.ndarray,
+    scalars: Optional[np.ndarray],
+    box_H: Sequence[float] | np.ndarray,
+    frame_id: int,
+    sim_time_ps: float,
+    n_dirty_tiles: int = 0,
+    use_int16: bool = True,
+    scalar_channel: int = 0,
+) -> bytes:
+    """
+    Pack a multi-tile sparse delta patch for active displaced atoms.
+    Accepts either full `(N, 3)` `coords_ang` (automatically sliced at `dirty_indices`)
+    or pre-sliced `(K, 3)` coordinates, enforcing strict 4-byte alignment.
+    """
+    idx = np.ascontiguousarray(dirty_indices, dtype=np.uint32).reshape((-1,))
+    k = int(idx.shape[0])
+    pts = np.asarray(coords_ang, dtype=np.float32)
+    if k == 0:
+        sub_coords = np.zeros((0, 3), dtype=np.float32)
+    elif pts.ndim == 2 and pts.shape[1] == 3 and pts.shape[0] > int(np.max(idx)):
+        sub_coords = np.ascontiguousarray(pts[idx], dtype=np.float32)
+    elif pts.ndim == 2 and pts.shape == (k, 3):
+        sub_coords = np.ascontiguousarray(pts, dtype=np.float32)
+    else:
+        raise ValueError(f"Incompatible coords_ang shape {pts.shape} for {k} dirty indices")
+
+    sub_scalars: Optional[np.ndarray] = None
+    if scalars is not None:
+        sc = np.asarray(scalars, dtype=np.float32).reshape((-1,))
+        if k == 0:
+            sub_scalars = np.zeros(0, dtype=np.float32)
+        elif sc.shape[0] > int(np.max(idx)):
+            sub_scalars = np.ascontiguousarray(sc[idx], dtype=np.float32)
+        elif sc.shape[0] == k:
+            sub_scalars = np.ascontiguousarray(sc, dtype=np.float32)
+        else:
+            raise ValueError(f"Incompatible scalars shape {sc.shape} for {k} dirty indices")
+
+    return pack_frame_tile_patch(
+        atom_indices=idx,
+        coords=sub_coords,
+        scalars=sub_scalars,
+        box_H=box_H,
+        frame_id=frame_id,
+        sim_time_ps=sim_time_ps,
+        use_int16=use_int16,
+        scalar_channel=scalar_channel,
+        tile_id=int(n_dirty_tiles),
+    )
 
 
 def pack_overlay_vectors(
@@ -461,7 +519,10 @@ def unpack_frame(data: bytes) -> Dict[str, Any]:
         if hdr.flags & FLAG_INT16_FRACTIONAL:
             q16 = np.frombuffer(payload, dtype=np.int16, count=3 * hdr.n_atoms, offset=off).reshape((hdr.n_atoms, 3))
             off += 6 * hdr.n_atoms
-            coords = decode_int16_fractional(q16, H)
+            pad_len = (-6 * hdr.n_atoms) % 4
+            if pad_len and off + pad_len <= len(payload):
+                off += pad_len
+            coords = decode_int16_fractional(q16, H) if hdr.n_atoms > 0 else np.zeros((0, 3), dtype=np.float32)
         else:
             coords = np.frombuffer(payload, dtype=np.float32, count=3 * hdr.n_atoms, offset=off).reshape((hdr.n_atoms, 3)).copy()
             off += 12 * hdr.n_atoms

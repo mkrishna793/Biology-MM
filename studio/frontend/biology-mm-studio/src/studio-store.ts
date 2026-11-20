@@ -4,6 +4,7 @@ import {
   BiologyMmStreamController,
   extractActiveMolstarStructure,
   extractActiveMolstarStructureBinary,
+  extractActiveMolstarSymmetryBinary,
   getBiologyMmStreamController,
 } from '@molstar/biology-mm-extension';
 import type { Subscription } from 'rxjs';
@@ -12,11 +13,14 @@ import type {
   CodeRunResult,
   CustomPhysicsSpec,
   FrameStats,
+  MultiscaleZoneConfig,
   PaletteName,
   PhysicsChannelName,
   PresetInfo,
+  RelaxationReport,
   SimulationMetrics,
   SimulationMode,
+  SteerAtomState,
   SteerRequest,
   StudioCapabilities,
 } from './types.js';
@@ -54,6 +58,11 @@ export interface StudioStoreState {
   codeText: string;
   codeRunResult: CodeRunResult | null;
   wideCodeEditorOpen: boolean;
+  multiscale: MultiscaleZoneConfig | null;
+  relaxationReport: RelaxationReport | null;
+  isRelaxing: boolean;
+  steerAtomState: SteerAtomState;
+  deltaThresholdAng: number;
 }
 
 const MAX_TELEMETRY_POINTS = 300;
@@ -70,6 +79,15 @@ const INITIAL_FRAME_STATS: FrameStats = {
   activePalette: 'plasma',
   reversed: false,
   wsConnected: false,
+  lastDirtyAtomCount: 0,
+  lastPacketBytes: 0,
+};
+
+const INITIAL_STEER_ATOM_STATE: SteerAtomState = {
+  active: false,
+  atom_index: null,
+  target_ang: null,
+  k_spring: 50.0,
 };
 
 const INITIAL_OVERLAYS: StudioOverlaysState = {
@@ -135,6 +153,11 @@ export class BiologyMmStudioStore {
     codeText: '',
     codeRunResult: null,
     wideCodeEditorOpen: false,
+    multiscale: null,
+    relaxationReport: null,
+    isRelaxing: false,
+    steerAtomState: { ...INITIAL_STEER_ATOM_STATE },
+    deltaThresholdAng: 0.02,
   };
 
   private readonly listeners = new Set<() => void>();
@@ -207,6 +230,8 @@ export class BiologyMmStudioStore {
           activeChannel: stats.activeChannel,
           activePalette: stats.activePalette,
           reversed: stats.reversed,
+          lastDirtyAtomCount: stats.lastDirtyAtomCount,
+          lastPacketBytes: stats.lastPacketBytes,
         },
       });
     });
@@ -272,6 +297,7 @@ export class BiologyMmStudioStore {
     this.setState({
       metrics: m,
       metricHistory: nextHistory,
+      multiscale: m.multiscale ?? this.state.multiscale,
       frameStats: {
         ...this.state.frameStats,
         nAtoms: m.n_atoms,
@@ -432,6 +458,9 @@ export class BiologyMmStudioStore {
         codeText: preset?.code_template ?? this.state.codeText,
         metrics: res.metrics ?? null,
         metricHistory: res.metrics ? [res.metrics] : [],
+        multiscale: res.metrics?.multiscale ?? null,
+        relaxationReport: null,
+        steerAtomState: { ...INITIAL_STEER_ATOM_STATE },
         frameStats: {
           ...this.state.frameStats,
           nAtoms,
@@ -456,12 +485,30 @@ export class BiologyMmStudioStore {
     dt?: number;
   }): Promise<boolean> {
     const ctrl = this.resolveController();
-    const binExtracted = extractActiveMolstarStructureBinary(this.plugin, ctrl?.structureBridge.liveStructureRef, {
+    const extractOpts = {
       mode: options?.mode ?? 'metal_verlet',
       temperature: options?.temperature ?? 300.0,
       dt: options?.dt ?? 0.001,
-    });
-    if (!binExtracted || binExtracted.nAtoms === 0) {
+    };
+
+    const symExtracted = extractActiveMolstarSymmetryBinary(
+      this.plugin,
+      ctrl?.structureBridge.liveStructureRef,
+      extractOpts,
+    );
+    const useSymmetry = Boolean(
+      symExtracted && symExtracted.nTransforms > 1 && symExtracted.totalAtoms > 100_000,
+    );
+
+    const binExtracted = useSymmetry
+      ? null
+      : extractActiveMolstarStructureBinary(
+          this.plugin,
+          ctrl?.structureBridge.liveStructureRef,
+          extractOpts,
+        );
+
+    if (!useSymmetry && (!binExtracted || binExtracted.nAtoms === 0)) {
       this.setState({
         error: 'No structure loaded in Mol*. Use Download Structure or Open Files in the Home panel first.',
       });
@@ -474,22 +521,32 @@ export class BiologyMmStudioStore {
       isPlaying: false,
       pickedAtom: null,
       isReversed: false,
+      relaxationReport: null,
+      steerAtomState: { ...INITIAL_STEER_ATOM_STATE },
     });
 
     try {
-      const resp = await fetch('/api/sessions/create-from-binary', {
+      const endpoint = useSymmetry
+        ? '/api/sessions/create-from-symmetry'
+        : '/api/sessions/create-from-binary';
+      const payloadBuffer = useSymmetry ? symExtracted!.buffer : binExtracted!.buffer;
+
+      const resp = await fetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/octet-stream' },
-        body: binExtracted.buffer,
+        body: payloadBuffer,
       });
       if (!resp.ok) {
-        throw new Error(`Failed to create simulation from binary: ${resp.statusText}`);
+        const body = await resp.text().catch(() => '');
+        throw new Error(body || `Failed to create simulation: ${resp.statusText}`);
       }
       const res = (await resp.json()) as { session_id: string; title?: string; metrics?: SimulationMetrics };
       if (this.disposed) return false;
 
-      const title = res.title || binExtracted.title;
-      const nAtoms = res.metrics?.n_atoms ?? binExtracted.nAtoms;
+      const fallbackTitle = useSymmetry ? symExtracted!.title : binExtracted!.title;
+      const fallbackAtoms = useSymmetry ? symExtracted!.totalAtoms : binExtracted!.nAtoms;
+      const title = res.title || fallbackTitle;
+      const nAtoms = res.metrics?.n_atoms ?? fallbackAtoms;
       const channel = this.state.activeChannel;
       const palette = this.state.activePalette;
 
@@ -500,6 +557,7 @@ export class BiologyMmStudioStore {
         colorMode: 'default',
         metrics: res.metrics ?? null,
         metricHistory: res.metrics ? [res.metrics] : [],
+        multiscale: res.metrics?.multiscale ?? null,
         frameStats: {
           ...this.state.frameStats,
           nAtoms,
@@ -510,12 +568,12 @@ export class BiologyMmStudioStore {
 
       await this.activateSessionScene(res.session_id, title, nAtoms, channel, palette, 'default');
 
-      if (extracted.truncated) {
+      if (useSymmetry && symExtracted) {
         PluginCommands.Toast.Show(this.plugin, {
-          title: 'Structure Truncated',
-          message: `In-browser extraction capped at ${extracted.elements.length.toLocaleString()} atoms (of ${extracted.original_atom_count.toLocaleString()}). Use 'Upload Structure File to Engine' for 100% full-assembly simulation without limits!`,
-          timeoutMs: 6000,
-          key: 'bmm-extract-truncated',
+          title: 'Symmetry-Native Upload',
+          message: `Uploaded ${symExtracted.nAsuAtoms.toLocaleString()} ASU atoms × ${symExtracted.nTransforms} transforms (${symExtracted.totalAtoms.toLocaleString()} total atoms).`,
+          timeoutMs: 4500,
+          key: 'bmm-symmetry-upload',
         });
       }
 
@@ -583,6 +641,9 @@ export class BiologyMmStudioStore {
         colorMode: 'default',
         metrics: res.metrics ?? null,
         metricHistory: res.metrics ? [res.metrics] : [],
+        multiscale: res.metrics?.multiscale ?? null,
+        relaxationReport: null,
+        steerAtomState: { ...INITIAL_STEER_ATOM_STATE },
         frameStats: {
           ...this.state.frameStats,
           nAtoms,
@@ -738,6 +799,165 @@ export class BiologyMmStudioStore {
     } catch (err) {
       this.setState({ error: err instanceof Error ? err.message : 'Steer failed' });
     }
+  }
+
+  async relaxClashes(): Promise<RelaxationReport | null> {
+    const sid = this.state.sessionId;
+    if (!sid) return null;
+    this.setState({ isRelaxing: true, error: null });
+    try {
+      const report = await fetchJson<RelaxationReport>(
+        `/api/sessions/${encodeURIComponent(sid)}/relax`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({}),
+        },
+      );
+      if (this.disposed) return report;
+      this.setState({ relaxationReport: report });
+      if (report.metrics) {
+        this.pushMetrics(report.metrics);
+      }
+      return report;
+    } catch (err) {
+      this.setState({ error: err instanceof Error ? err.message : 'Clash relaxation failed' });
+      return null;
+    } finally {
+      if (!this.disposed) {
+        this.setState({ isRelaxing: false });
+      }
+    }
+  }
+
+  async setFocusZone(
+    centerAng: [number, number, number],
+    aaRadiusAng: number,
+    cgRadiusAng: number,
+  ): Promise<MultiscaleZoneConfig | null> {
+    const sid = this.state.sessionId;
+    if (!sid) return null;
+    const payload = {
+      enabled: true,
+      center_ang: centerAng,
+      aa_radius_ang: Math.max(1, aaRadiusAng),
+      cg_radius_ang: Math.max(Math.max(1, aaRadiusAng), cgRadiusAng),
+    };
+    this.sendWsCommand({
+      action: 'set_focus_zone',
+      center_ang: payload.center_ang,
+      aa_radius_ang: payload.aa_radius_ang,
+      cg_radius_ang: payload.cg_radius_ang,
+    });
+    try {
+      const res = await fetchJson<
+        (MultiscaleZoneConfig & { metrics?: SimulationMetrics }) | { multiscale?: MultiscaleZoneConfig; metrics?: SimulationMetrics }
+      >(`/api/sessions/${encodeURIComponent(sid)}/multiscale`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      if (this.disposed) return null;
+      const ms: MultiscaleZoneConfig =
+        'multiscale' in res && res.multiscale
+          ? res.multiscale
+          : 'counts' in res
+            ? res
+            : {
+                enabled: true,
+                center_ang: payload.center_ang,
+                aa_radius_ang: payload.aa_radius_ang,
+                cg_radius_ang: payload.cg_radius_ang,
+                counts: this.state.multiscale?.counts ?? {
+                  all_atom: 0,
+                  coarse_grained: 0,
+                  rigid_scaffold: 0,
+                },
+              };
+      this.setState({ multiscale: ms });
+      if ('metrics' in res && res.metrics) {
+        this.pushMetrics(res.metrics);
+      }
+      return ms;
+    } catch (err) {
+      this.setState({ error: err instanceof Error ? err.message : 'Failed to update multiscale focus zone' });
+      return null;
+    }
+  }
+
+  async steerAtom(
+    atomIndex: number,
+    targetAng: [number, number, number],
+    kSpring = 50.0,
+  ): Promise<boolean> {
+    const sid = this.state.sessionId;
+    if (!sid) return false;
+    try {
+      const res = await fetchJson<{ ok?: boolean; metrics?: SimulationMetrics }>(
+        `/api/sessions/${encodeURIComponent(sid)}/steer-atom`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            enabled: true,
+            atom_index: atomIndex,
+            target_ang: targetAng,
+            k_spring: kSpring,
+          }),
+        },
+      );
+      if (this.disposed) return false;
+      this.setState({
+        steerAtomState: {
+          active: true,
+          atom_index: atomIndex,
+          target_ang: targetAng,
+          k_spring: kSpring,
+        },
+      });
+      if (res.metrics) {
+        this.pushMetrics(res.metrics);
+      }
+      return res.ok !== false;
+    } catch (err) {
+      this.setState({ error: err instanceof Error ? err.message : 'Failed to apply steered MD spring' });
+      return false;
+    }
+  }
+
+  async clearSteerAtom(): Promise<void> {
+    const sid = this.state.sessionId;
+    this.setState({ steerAtomState: { ...INITIAL_STEER_ATOM_STATE } });
+    if (!sid) return;
+    try {
+      const res = await fetchJson<{ ok?: boolean; metrics?: SimulationMetrics }>(
+        `/api/sessions/${encodeURIComponent(sid)}/steer-atom`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            enabled: false,
+            atom_index: null,
+            target_ang: null,
+            k_spring: 0,
+          }),
+        },
+      );
+      if (res.metrics) {
+        this.pushMetrics(res.metrics);
+      }
+    } catch (err) {
+      this.setState({ error: err instanceof Error ? err.message : 'Failed to clear steered MD spring' });
+    }
+  }
+
+  setDeltaThreshold(thresholdAng: number): void {
+    const clamped = Math.max(0, Math.min(0.2, Number.isFinite(thresholdAng) ? thresholdAng : 0.02));
+    this.setState({ deltaThresholdAng: clamped });
+    this.sendWsCommand({
+      action: 'set_delta_threshold',
+      threshold_ang: clamped,
+    });
   }
 
   async setColorMode(mode: StudioColorMode): Promise<void> {

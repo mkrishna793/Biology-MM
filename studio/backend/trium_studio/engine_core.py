@@ -32,7 +32,15 @@ from biology_mm import (
 )
 from biology_mm.native import _as_box_matrices, _encode_pair_keys, get_bridge
 
+from .multiscale import (
+    DirtyTileTracker,
+    MultiscaleZonePartition,
+    _find_neighbor_pairs_mic,
+    assign_multiscale_zones,
+    softcore_relax_clashes,
+)
 from .protocol import (
+    pack_dirty_tile_delta,
     pack_frame_full,
     pack_frame_tile_patch,
     pack_gcmc_slot_delta,
@@ -48,6 +56,7 @@ PHYSICS_CHANNEL_NAMES = (
     "bond-order",
     "atomic-stress",
     "ternary-state",
+    "multiscale-zone",
 )
 
 ELEMENT_Z: Dict[str, int] = {
@@ -879,8 +888,21 @@ class SimulationSession:
             pad_tiles = np.full(self.capacity - n, int(np.max(self.tile_ids) + 1) if n > 0 else 0, dtype=np.uint32)
             self.tile_ids = np.concatenate([self.tile_ids, pad_tiles])
 
+        # Multiscale 3-zone partition, dirty-tile delta tracker, interactive SMD & health diagnostics
+        self.multiscale_zones = np.zeros(self.capacity, dtype=np.uint8)
+        self._multiscale_partition: Optional[MultiscaleZonePartition] = None
+        self._dirty_tracker = DirtyTileTracker(self.capacity, self.tile_ids, threshold_ang=0.05)
+        self.delta_streaming_enabled: bool = False
+        self._last_dirty_ratio: float = 1.0
+        self._last_dirty_tiles: int = 0
+        self._smd_pull: Optional[Dict[str, Any]] = None
+        self._smd_history: List[Dict[str, float]] = []
+        self._last_clash_report: Optional[Dict[str, Any]] = None
+        self._initial_total_energy: Optional[float] = None
+
         self._init_backend_resources()
         self._evaluate_state()
+        self._initial_total_energy = float(self.potential_energy + self.kinetic_energy)
         self._record_history()
 
     def _init_backend_resources(self) -> None:
@@ -898,20 +920,24 @@ class SimulationSession:
             rc_safe = min(self.rcut, 0.45 * min_L)
             skin = min(0.18, max(0.05, 0.48 * min_L - rc_safe))
             self.rcut = rc_safe
-            self._gpu_plan = _build_spatial_gpu_verlet_plan(
-                positions=self.positions[: self.n_real],
-                sigma=self.sigma[: self.n_real],
-                epsilon=self.epsilon[: self.n_real],
-                charges=self.charges[: self.n_real],
-                box=self.box_H,
-                exclusions=self.system.bonds or None,
-                rcut=rc_safe,
-                skin=max(0.02, skin),
-                alpha_dsf=self.alpha_dsf,
-                use_lfs=True,
-                include_self=True,
-                backend="auto",
-            )
+            try:
+                self._gpu_plan = _build_spatial_gpu_verlet_plan(
+                    positions=self.positions[: self.n_real],
+                    sigma=self.sigma[: self.n_real],
+                    epsilon=self.epsilon[: self.n_real],
+                    charges=self.charges[: self.n_real],
+                    box=self.box_H,
+                    exclusions=self.system.bonds or None,
+                    rcut=rc_safe,
+                    skin=max(0.02, skin),
+                    alpha_dsf=self.alpha_dsf,
+                    use_lfs=True,
+                    include_self=True,
+                    backend="auto",
+                )
+            except RuntimeError:
+                # Pure-NumPy fallback when native C++/Metal library is absent (e.g. Linux CI sandbox)
+                self._gpu_plan = None
 
     def close(self) -> None:
         with self._lock:
@@ -1203,9 +1229,55 @@ class SimulationSession:
 
         return u_tot, F[:n], vir
 
+    def _evaluate_numpy_nonbonded(self, q: np.ndarray) -> Tuple[float, np.ndarray, np.ndarray]:
+        """Pure-NumPy periodic shifted-LJ nonbonded fallback when native CPU/Metal library is absent."""
+        n = int(q.shape[0])
+        f = np.zeros((n, 3), dtype=np.float64)
+        vir = np.zeros((3, 3), dtype=np.float64)
+        if n < 2:
+            return 0.0, f, vir
+
+        box_L = np.diag(self.box_H).astype(np.float64)
+        rc = min(float(self.rcut), 0.45 * float(np.min(box_L)))
+        ii, jj, d_ij, r = _find_neighbor_pairs_mic(q, box_L, rc)
+        if ii.size == 0:
+            return 0.0, f, vir
+
+        if self._bond_pairs.shape[0] > 0:
+            bp = self._bond_pairs
+            b_lo = np.minimum(bp[:, 0], bp[:, 1]).astype(np.int64)
+            b_hi = np.maximum(bp[:, 0], bp[:, 1]).astype(np.int64)
+            bond_keys = b_lo * n + b_hi
+            pair_keys = ii.astype(np.int64) * n + jj.astype(np.int64)
+            keep = ~np.isin(pair_keys, bond_keys)
+            ii, jj, d_ij, r = ii[keep], jj[keep], d_ij[keep], r[keep]
+            if ii.size == 0:
+                return 0.0, f, vir
+
+        sig_ij = 0.5 * (self.sigma[ii] + self.sigma[jj])
+        eps_ij = np.sqrt(np.maximum(self.epsilon[ii] * self.epsilon[jj], 0.0))
+        r_safe = np.maximum(r, 0.25 * sig_ij)
+        inv_r2 = 1.0 / (r_safe * r_safe)
+        s2 = (sig_ij * sig_ij) * inv_r2
+        s6 = s2 * s2 * s2
+        s12 = s6 * s6
+
+        s2_rc = (sig_ij * sig_ij) / (rc * rc)
+        s6_rc = s2_rc * s2_rc * s2_rc
+        u_pair = 4.0 * eps_ij * ((s12 - s6) - (s6_rc * s6_rc - s6_rc))
+        du_over_r = 24.0 * eps_ij * (s6 - 2.0 * s12) * inv_r2
+        f_ij = d_ij * (-du_over_r)[:, None]
+        np.add.at(f, ii, f_ij)
+        np.add.at(f, jj, -f_ij)
+        vir = d_ij.T @ f_ij
+        return float(np.sum(u_pair)), f, vir
+
     def _evaluate_state(self) -> None:
-        if self.mode == "metal_verlet" and self._gpu_plan is not None:
-            u, f, vir = self._gpu_plan.eval(positions=self.positions[: self.n_real], box=self.box_H, compute_virial=True)
+        if self.mode == "metal_verlet":
+            if self._gpu_plan is not None:
+                u, f, vir = self._gpu_plan.eval(positions=self.positions[: self.n_real], box=self.box_H, compute_virial=True)
+            else:
+                u, f, vir = self._evaluate_numpy_nonbonded(self.positions[: self.n_real])
             # Include harmonic covalent bonds + electric field if system carries explicit bonds/charges
             if self._bond_pairs.shape[0] > 0:
                 ii = self._bond_pairs[:, 0]
@@ -1394,6 +1466,36 @@ class SimulationSession:
             self.potential_energy = 0.0
             self.forces.fill(0.0)
 
+        if self._smd_pull is not None:
+            smd_idx = int(self._smd_pull["atom_index"])
+            if 0 <= smd_idx < self.n_real and self.active_mask[smd_idx]:
+                target_nm = self._smd_pull["target_nm"]
+                k_spring = float(self._smd_pull["k_spring"])
+                disp = target_nm - self.positions[smd_idx]
+                Hinv = np.linalg.inv(self.box_H)
+                frac = disp @ Hinv.T
+                frac -= np.rint(frac)
+                disp_mic = frac @ self.box_H.T
+                u_smd = 0.5 * k_spring * float(np.dot(disp_mic, disp_mic))
+                f_smd = k_spring * disp_mic
+                self.potential_energy += u_smd
+                self.forces[smd_idx] += f_smd
+                ext_nm = float(np.linalg.norm(disp_mic))
+                ext_ang = ext_nm * self.coord_to_ang
+                f_pull = k_spring * ext_nm
+                self._smd_pull["extension_ang"] = ext_ang
+                self._smd_pull["pull_force_kj_mol_nm"] = f_pull
+                self._smd_history.append(
+                    {
+                        "step": int(self.step_count),
+                        "time_ps": round(float(self.sim_time_ps), 6),
+                        "extension_ang": float(ext_ang),
+                        "force": float(f_pull),
+                    }
+                )
+                if len(self._smd_history) > 200:
+                    self._smd_history = self._smd_history[-200:]
+
         act = self.active_mask
         p_act = self.momenta[act]
         m_act = self.masses[act]
@@ -1435,6 +1537,8 @@ class SimulationSession:
             self.momenta[:n] = vel0 * self.masses[:n, None]
             self.max_step_disp = 0.02
             self._evaluate_state()
+            self._initial_total_energy = float(self.potential_energy + self.kinetic_energy)
+            self._dirty_tracker.reset()
             self._history.clear()
             self._record_history()
             return {
@@ -1462,6 +1566,8 @@ class SimulationSession:
                 and n_steps >= 10
                 and not self.bonds
                 and abs(self.strain_rate) == 0.0
+                and self._smd_pull is None
+                and self._multiscale_partition is None
             ):
                 res = self._gpu_plan.run_batched_steps(
                     positions=self.positions[: self.n_real],
@@ -1498,6 +1604,10 @@ class SimulationSession:
                     disp = self.dt * self.momenta[act] / self.masses[act, None]
                     if self.max_step_disp is not None:
                         disp = np.clip(disp, -self.max_step_disp, self.max_step_disp)
+                    if self._multiscale_partition is not None:
+                        rigid_act = self.multiscale_zones[act] == 2
+                        if np.any(rigid_act):
+                            disp[rigid_act] = 0.0
                     self.positions[act] += disp
 
                     # Weak Langevin O-step when thermostatted
@@ -1603,6 +1713,8 @@ class SimulationSession:
             out = self.atomic_stress.astype(np.float32)
         elif channel_name == "ternary-state":
             out = self.ternary_states.astype(np.float32)
+        elif channel_name == "multiscale-zone":
+            out = self.multiscale_zones.astype(np.float32)
         else:
             raise ValueError(f"Unknown physics color channel '{channel_name}'; expected one of {PHYSICS_CHANNEL_NAMES}")
         out[~self.active_mask] = 0.0
@@ -1652,6 +1764,31 @@ class SimulationSession:
             ns_per_day = (0.002 * 86400.0) / max(self.last_ms_per_step, 1e-4)
             f_max = float(np.max(np.linalg.norm(self.forces[self.active_mask], axis=1))) if n_act > 0 else 0.0
             vol_nm3 = float(abs(np.linalg.det(self.box_H)))
+            total_e = float(self.potential_energy + self.kinetic_energy)
+            e0 = self._initial_total_energy
+            if e0 is not None and math.isfinite(total_e) and math.isfinite(e0):
+                drift_fraction = abs(total_e - e0) / max(abs(e0), 1.0)
+            else:
+                drift_fraction = 0.0 if math.isfinite(total_e) else float("inf")
+
+            if (not math.isfinite(total_e)) or (not math.isfinite(f_max)) or (f_max > 1.0e5):
+                health_status = "clash"
+            elif (f_max > 1.0e4) or (drift_fraction > 0.05):
+                health_status = "warning"
+            else:
+                health_status = "bounded"
+
+            smd_info = None
+            if self._smd_pull is not None:
+                smd_info = {
+                    "active": True,
+                    "atom_index": int(self._smd_pull["atom_index"]),
+                    "target_ang": list(self._smd_pull["target_ang"]),
+                    "k_spring": float(self._smd_pull["k_spring"]),
+                    "extension_ang": float(self._smd_pull.get("extension_ang", 0.0)),
+                    "pull_force_kj_mol_nm": float(self._smd_pull.get("pull_force_kj_mol_nm", 0.0)),
+                }
+
             return {
                 "step": int(self.step_count),
                 "time_ps": round(self.sim_time_ps, 6),
@@ -1659,9 +1796,11 @@ class SimulationSession:
                 "capacity": int(self.capacity),
                 "potential_energy": float(self.potential_energy),
                 "kinetic_energy": float(self.kinetic_energy),
-                "total_energy": float(self.potential_energy + self.kinetic_energy),
+                "total_energy": total_e,
                 "temperature_K": float(inst_temp),
                 "max_force": f_max,
+                "drift_fraction": float(drift_fraction),
+                "health_status": health_status,
                 "ms_per_step": float(self.last_ms_per_step),
                 "ns_per_day_2fs": float(ns_per_day),
                 "box_lengths_nm": [float(self.box_H[0, 0]), float(self.box_H[1, 1]), float(self.box_H[2, 2])],
@@ -1670,6 +1809,18 @@ class SimulationSession:
                 "mode": self.mode,
                 "backend": self.hardware.backend if (self.mode == "metal_verlet" and self.hardware.has_gpu) else "cpu",
                 "history_steps": list(self._history.keys()),
+                "multiscale": (
+                    self._multiscale_partition.build_multiscale_summary()
+                    if self._multiscale_partition is not None
+                    else None
+                ),
+                "smd": smd_info,
+                "delta_streaming": {
+                    "enabled": bool(self.delta_streaming_enabled),
+                    "threshold_ang": float(self._dirty_tracker.threshold_ang),
+                    "last_dirty_ratio": float(self._last_dirty_ratio),
+                    "last_dirty_tiles": int(self._last_dirty_tiles),
+                },
             }
 
     def steer(
@@ -1692,6 +1843,116 @@ class SimulationSession:
             if active_channel is not None and active_channel in PHYSICS_CHANNEL_NAMES:
                 self.active_channel = PHYSICS_CHANNEL_NAMES.index(active_channel)
             return self.get_metrics()
+
+    def set_focus_zone(
+        self,
+        center_ang: Sequence[float],
+        aa_radius_ang: float = 15.0,
+        cg_radius_ang: float = 35.0,
+    ) -> Dict[str, Any]:
+        """Partition atoms into All-Atom (0), Coarse-Grained (1), and Rigid Scaffold (2) zones."""
+        with self._lock:
+            coords_ang = self.positions[: self.n_real] * self.coord_to_ang
+            part = assign_multiscale_zones(coords_ang, center_ang, aa_radius_ang, cg_radius_ang)
+            self._multiscale_partition = part
+            self.multiscale_zones[: self.n_real] = part.zone_ids
+            if self.capacity > self.n_real:
+                self.multiscale_zones[self.n_real :] = 2
+            return part.build_multiscale_summary()
+
+    def relax_clashes(
+        self,
+        max_steps: int = 40,
+        max_force_cap: float = 5000.0,
+        alpha_sc: float = 0.5,
+        lam: float = 0.5,
+    ) -> Dict[str, Any]:
+        """Run Beutler soft-core LJ clash relaxation on active atoms and re-evaluate state."""
+        with self._lock:
+            n = self.n_real
+            relaxed_pos, report = softcore_relax_clashes(
+                self.positions[:n],
+                np.diag(self.box_H),
+                self.sigma[:n],
+                self.epsilon[:n],
+                max_steps=max_steps,
+                max_force_cap=max_force_cap,
+                alpha_sc=alpha_sc,
+                lam=lam,
+            )
+            self.positions[:n] = relaxed_pos
+            self.max_step_disp = 0.02
+            self._evaluate_state()
+            self._initial_total_energy = float(self.potential_energy + self.kinetic_energy)
+            self._dirty_tracker.reset()
+            self._last_clash_report = dict(report)
+            self._record_history()
+            return report
+
+    def set_delta_threshold(
+        self,
+        threshold_ang: float,
+        enabled: Optional[bool] = None,
+    ) -> Dict[str, Any]:
+        """Configure DirtyTileTracker displacement threshold (Å) for sparse delta streaming."""
+        with self._lock:
+            thr = max(0.0, float(threshold_ang))
+            self._dirty_tracker.set_threshold(thr)
+            if enabled is not None:
+                self.delta_streaming_enabled = bool(enabled)
+            else:
+                self.delta_streaming_enabled = thr > 0.0
+            return {
+                "threshold_ang": float(self._dirty_tracker.threshold_ang),
+                "delta_streaming_enabled": bool(self.delta_streaming_enabled),
+            }
+
+    def steer_atom(
+        self,
+        atom_index: Optional[int],
+        target_ang: Optional[Sequence[float]] = None,
+        k_spring: float = 500.0,
+    ) -> Dict[str, Any]:
+        """Attach or clear an interactive SMD harmonic spring pull on a single atom."""
+        with self._lock:
+            if atom_index is None or target_ang is None or float(k_spring) <= 0.0:
+                self._smd_pull = None
+                self._evaluate_state()
+                return {
+                    "active": False,
+                    "atom_index": None,
+                    "target_ang": None,
+                    "k_spring": 0.0,
+                    "extension_ang": 0.0,
+                    "pull_force_kj_mol_nm": 0.0,
+                    "history": list(self._smd_history[-32:]),
+                }
+
+            idx = int(atom_index)
+            if idx < 0 or idx >= self.n_real:
+                raise IndexError(f"Atom index {idx} out of range 0..{self.n_real - 1}")
+            tgt_ang = [float(v) for v in target_ang]
+            if len(tgt_ang) != 3:
+                raise ValueError(f"target_ang must have length 3, got {len(tgt_ang)}")
+
+            self._smd_pull = {
+                "atom_index": idx,
+                "target_ang": tgt_ang,
+                "target_nm": np.asarray(tgt_ang, dtype=np.float64) / self.coord_to_ang,
+                "k_spring": float(k_spring),
+                "extension_ang": 0.0,
+                "pull_force_kj_mol_nm": 0.0,
+            }
+            self._evaluate_state()
+            return {
+                "active": True,
+                "atom_index": idx,
+                "target_ang": tgt_ang,
+                "k_spring": float(k_spring),
+                "extension_ang": float(self._smd_pull["extension_ang"]),
+                "pull_force_kj_mol_nm": float(self._smd_pull["pull_force_kj_mol_nm"]),
+                "history": list(self._smd_history[-32:]),
+            }
 
     def inspect_atom(self, idx: int) -> Dict[str, Any]:
         with self._lock:
@@ -1742,6 +2003,7 @@ class SimulationSession:
         channel_name: Optional[str] = None,
         reversed_step: bool = False,
         camera_roi: Optional[Tuple[Sequence[float], float, int]] = None,
+        use_delta: Optional[bool] = None,
     ) -> bytes:
         with self._lock:
             ch_name = channel_name or PHYSICS_CHANNEL_NAMES[self.active_channel]
@@ -1765,6 +2027,27 @@ class SimulationSession:
                     tile_id=0,
                 )
 
+            want_delta = self.delta_streaming_enabled if use_delta is None else bool(use_delta)
+            if want_delta and (not reversed_step) and self._dirty_tracker.last_sent_coords_ang is not None:
+                dirty_idx, dirty_ratio, n_dirty_tiles = self._dirty_tracker.compute_dirty(coords_ang, commit=True)
+                self._last_dirty_ratio = dirty_ratio
+                self._last_dirty_tiles = n_dirty_tiles
+                if dirty_ratio < 0.75:
+                    return pack_dirty_tile_delta(
+                        dirty_indices=dirty_idx,
+                        coords_ang=coords_ang,
+                        scalars=scalars,
+                        box_H=box_ang,
+                        frame_id=self.step_count,
+                        sim_time_ps=self.sim_time_ps,
+                        n_dirty_tiles=n_dirty_tiles,
+                        use_int16=self.use_int16,
+                        scalar_channel=ch_idx,
+                    )
+
+            self._dirty_tracker.reset(coords_ang)
+            self._last_dirty_ratio = 1.0
+            self._last_dirty_tiles = int(np.unique(self.tile_ids).size) if self.capacity > 0 else 0
             return pack_frame_full(
                 coords=coords_ang,
                 frame_id=self.step_count,
@@ -1842,6 +2125,14 @@ class SimulationSession:
                         idx27 = (dx + 1) + 3 * (dy + 1) + 9 * (dz + 1)
                         k27[idx27] = 1.0 if r2 == 0 else 1.0 / (math.sqrt(r2) * 3.0)
 
-            _, phi = gpu_msm_stencil27(Q_grid, k27, prefactor=1.0, backend="auto")
+            try:
+                _, phi = gpu_msm_stencil27(Q_grid, k27, prefactor=1.0, backend="auto")
+            except RuntimeError:
+                phi = np.zeros_like(Q_grid)
+                for dz in (-1, 0, 1):
+                    for dy in (-1, 0, 1):
+                        for dx in (-1, 0, 1):
+                            w = k27[(dx + 1) + 3 * (dy + 1) + 9 * (dz + 1)]
+                            phi += w * np.roll(Q_grid, shift=(-dx, -dy, -dz), axis=(0, 1, 2))
             box_ang = (self.box_H * self.coord_to_ang).astype(np.float32)
             return pack_volume_grid3d(phi.astype(np.float32), box_H=box_ang, origin=(0.0, 0.0, 0.0), frame_id=self.step_count, sim_time_ps=self.sim_time_ps)

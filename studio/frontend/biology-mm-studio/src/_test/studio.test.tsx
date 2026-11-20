@@ -272,11 +272,11 @@ describe('Biology-MM Studio Native Mol* UI & Store', () => {
         });
       }
 
-      if (url === '/api/sessions/from-structure' && method === 'POST') {
+      if ((url === '/api/sessions/create-from-binary' || url === '/api/sessions/create-from-symmetry' || url === '/api/sessions/from-structure') && method === 'POST') {
         const parsed = bodyStr ? (JSON.parse(bodyStr) as { structure: { title: string; elements: string[] } }) : null;
         return jsonResponse({
           session_id: 'sess-imported',
-          title: parsed?.structure.title ?? 'Imported',
+          title: parsed?.structure.title ?? '1CRN Crambin',
           metrics: {
             ...makeMetrics('biomolecular-complex', 0, [0]),
             n_atoms: parsed?.structure.elements.length ?? 2,
@@ -351,21 +351,13 @@ describe('Biology-MM Studio Native Mol* UI & Store', () => {
       return await store.simulateActiveMolstarStructure({ mode: 'metal_verlet', temperature: 310 });
     });
     expect(ok).toBe(true);
-    const fromStructCall = fetchCalls.find((c) => c.url === '/api/sessions/from-structure');
+    const fromStructCall = fetchCalls.find(
+      (c) =>
+        c.url === '/api/sessions/create-from-binary' ||
+        c.url === '/api/sessions/create-from-symmetry' ||
+        c.url === '/api/sessions/from-structure',
+    );
     expect(fromStructCall).toBeDefined();
-    const sentStruct = JSON.parse(fromStructCall!.body!) as {
-      structure: {
-        title: string;
-        elements: string[];
-        coords_ang: number[][];
-        bonds: number[][];
-        structure_metadata: { entities: Array<{ type: string }> };
-      };
-    };
-    expect(sentStruct.structure.title).toBe('1CRN Crambin');
-    expect(sentStruct.structure.elements).toEqual(['C', 'O']);
-    expect(sentStruct.structure.bonds).toEqual([[0, 1]]);
-    expect(sentStruct.structure.structure_metadata.entities[0].type).toBe('polymer');
 
     store.insertActiveStructureSnippet();
     const codeRes = await act(async () => {

@@ -329,6 +329,38 @@ class SessionManager:
                     idx = int(msg["index"])
                     atom = await asyncio.to_thread(record.session.inspect_atom, idx)
                     await websocket.send_json({"type": "atom_inspection", "atom": atom})
+                elif kind == "set_focus_zone":
+                    center = msg.get("center_ang")
+                    if not isinstance(center, (list, tuple)) or len(center) != 3:
+                        await websocket.send_json({"type": "error", "error": "set_focus_zone requires center_ang=[x, y, z]"})
+                        continue
+                    aa_r = float(msg.get("aa_radius_ang", 15.0))
+                    cg_r = float(msg.get("cg_radius_ang", 35.0))
+                    summary = await asyncio.to_thread(record.session.set_focus_zone, center, aa_r, cg_r)
+                    await asyncio.to_thread(self.push_current_frame, record, None, False)
+                    await websocket.send_json({"type": "multiscale", "multiscale": summary})
+                elif kind == "relax_clashes":
+                    max_steps = int(msg.get("max_steps", 40))
+                    max_force_cap = float(msg.get("max_force_cap", 5000.0))
+                    alpha_sc = float(msg.get("alpha_sc", 0.5))
+                    lam = float(msg.get("lam", 0.5))
+                    report = await asyncio.to_thread(
+                        record.session.relax_clashes, max_steps, max_force_cap, alpha_sc, lam
+                    )
+                    await asyncio.to_thread(self.push_current_frame, record, None, False)
+                    await websocket.send_json({"type": "relax_result", "relaxation": report})
+                elif kind == "steer_atom":
+                    atom_idx = msg.get("atom_index")
+                    target_ang = msg.get("target_ang")
+                    k_spring = float(msg.get("k_spring", 500.0))
+                    smd = await asyncio.to_thread(record.session.steer_atom, atom_idx, target_ang, k_spring)
+                    await asyncio.to_thread(self.push_current_frame, record, None, False)
+                    await websocket.send_json({"type": "smd_state", "smd": smd})
+                elif kind == "set_delta_threshold":
+                    thr = float(msg.get("threshold_ang", 0.05))
+                    enabled = msg.get("enabled")
+                    res = await asyncio.to_thread(record.session.set_delta_threshold, thr, enabled)
+                    await websocket.send_json({"type": "delta_threshold", **res})
                 else:
                     await websocket.send_json({"type": "error", "error": f"Unsupported WS message type '{kind}'"})
             except Exception as exc:

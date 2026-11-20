@@ -52,6 +52,8 @@ export interface StreamFrameStats {
   readonly reversed: boolean;
   readonly activeChannel: PhysicsChannelName;
   readonly activePalette: PaletteName;
+  readonly lastDirtyAtomCount: number;
+  readonly lastPacketBytes: number;
 }
 
 export interface AtomPickedEvent {
@@ -145,6 +147,8 @@ export class BiologyMmStreamController {
   private pendingVolumeMsg: VolumeGrid3DMessage | undefined;
 
   private droppedFrames = 0;
+  private lastDirtyAtomCount = 0;
+  private lastPacketBytes = 0;
   private lastRenderTimeMs = 0;
   private smoothedFps = 0;
   private disposed = false;
@@ -174,6 +178,8 @@ export class BiologyMmStreamController {
       reversed: false,
       activeChannel: initialChannel,
       activePalette: initialPalette,
+      lastDirtyAtomCount: 0,
+      lastPacketBytes: 0,
     });
 
     this.frameStats$ = this._frameStats$.asObservable();
@@ -265,6 +271,8 @@ export class BiologyMmStreamController {
         const msg = decodeTriumMessage(buffer);
         if (msg.kind === 'topology') {
           this.updater.applyTopologyInit(msg);
+          this.lastDirtyAtomCount = msg.header.nAtoms;
+          this.lastPacketBytes = buffer.byteLength;
           this.needsTopologyCommit = true;
           this.needsFrameCommit = true;
           if (!this.useNativeStructure) {
@@ -280,6 +288,8 @@ export class BiologyMmStreamController {
           this.droppedFrames++;
         }
         this.updater.applyFrameFullBinary(buffer, header);
+        this.lastDirtyAtomCount = this.updater.lastDirtyAtomCount;
+        this.lastPacketBytes = buffer.byteLength;
         this.needsFrameCommit = true;
         this.requestRender();
         break;
@@ -291,7 +301,9 @@ export class BiologyMmStreamController {
           if (this.pendingRender && this.needsFrameCommit) {
             this.droppedFrames++;
           }
-          this.updater.applyTilePatch(msg);
+          this.updater.applyTilePatch(msg, buffer.byteLength);
+          this.lastDirtyAtomCount = msg.atomIndices.length;
+          this.lastPacketBytes = buffer.byteLength;
           this.needsFrameCommit = true;
           this.requestRender();
         }
@@ -581,6 +593,8 @@ export class BiologyMmStreamController {
         reversed: this.updater.reversed,
         activeChannel: channel,
         activePalette: palette,
+        lastDirtyAtomCount: this.lastDirtyAtomCount,
+        lastPacketBytes: this.lastPacketBytes,
       });
     } finally {
       this.isCommitting = false;

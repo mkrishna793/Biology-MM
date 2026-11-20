@@ -73,6 +73,7 @@ const SUITES = [
     "test_trajectory_format_extxyz",
     "test_tile_cache_scale",
     "test_alchemical",
+    "test_multiscale",
     "test_trium_xbt",
     "test_ternary_msm",
     "test_symplectic_ternary",

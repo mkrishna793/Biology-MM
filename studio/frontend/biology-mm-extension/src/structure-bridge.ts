@@ -671,3 +671,233 @@ export function extractActiveMolstarStructureBinary(
     box_ang: cellBoxAng,
   };
 }
+
+
+export interface ExtractedMolstarSymmetryBinary {
+  readonly title: string;
+  readonly nAsuAtoms: number;
+  readonly nTransforms: number;
+  readonly totalAtoms: number;
+  readonly buffer: ArrayBuffer;
+  readonly box_ang?: [number, number, number];
+}
+
+export interface SymmetryBinaryOptions {
+  readonly excludeStructureRef?: string;
+  readonly mode?: string;
+  readonly temperature?: number;
+  readonly dt?: number;
+}
+
+function matrixKey(m: ArrayLike<number>): string {
+  const parts: string[] = new Array(16);
+  for (let i = 0; i < 16; i++) {
+    const v = Math.abs(m[i]) < 1e-5 ? 0 : m[i];
+    parts[i] = v.toFixed(4);
+  }
+  return parts.join(',');
+}
+
+/**
+ * Detect when the active Mol* structure consists of multiple symmetry-related copies
+ * of a common asymmetric unit (e.g., viral capsid Assembly 1) and pack a strictly
+ * 4-byte-aligned `TSYM` binary payload:
+ *
+ *   48-byte header `<4sIIIffIIfffI`:
+ *     magic='TSYM', n_asu_atoms, n_transforms, title_len, temperature, dt,
+ *     mode_len, flags (0x01 = has_elements), bx, by, bz, reserved=0
+ *   Byte offset 48:
+ *     Float32Array ASU coords (3 * n_asu_atoms)
+ *     Float32Array 4x4 row-major transforms (16 * n_transforms)
+ *     Uint8Array elements (n_asu_atoms, when flags & 0x01)
+ *     UTF-8 title bytes, UTF-8 mode bytes
+ *
+ * Returns `null` when the structure does not have >1 uniform symmetry transforms.
+ */
+export function extractActiveMolstarSymmetryBinary(
+  plugin: PluginContext,
+  optionsOrExclude?: string | SymmetryBinaryOptions,
+  optionsArg?: { mode?: string; temperature?: number; dt?: number },
+): ExtractedMolstarSymmetryBinary | null {
+  const excludeStructureRef =
+    typeof optionsOrExclude === 'string' ? optionsOrExclude : optionsOrExclude?.excludeStructureRef;
+  const options =
+    typeof optionsOrExclude === 'string' ? optionsArg : optionsOrExclude;
+
+  const structures = plugin.managers?.structure?.hierarchy?.current?.structures;
+  if (!structures || structures.length === 0) return null;
+
+  const external = excludeStructureRef
+    ? structures.filter((s) => s.cell.transform.ref !== excludeStructureRef)
+    : structures;
+  const targetRef = external.length > 0 ? external[external.length - 1] : structures[structures.length - 1];
+  const structure = targetRef?.cell?.obj?.data;
+  if (!structure) return null;
+
+  const atomicUnits: Unit.Atomic[] = [];
+  let totalAtoms = 0;
+  for (const u of structure.units) {
+    if (Unit.isAtomic(u)) {
+      atomicUnits.push(u);
+      totalAtoms += u.elements.length;
+    }
+  }
+  if (atomicUnits.length <= 1 || totalAtoms === 0) return null;
+
+  // Group atomic units by their 4x4 symmetry operator matrix.
+  // In biological assemblies (e.g. icosahedral capsids), each symmetry copy shares
+  // an operator matrix and contains the same set of ASU chains.
+  const opBuckets = new Map<string, { matrix: ArrayLike<number>; units: Unit.Atomic[]; atomCount: number }>();
+  for (const u of atomicUnits) {
+    const mat = u.conformation.operator.matrix;
+    const key = matrixKey(mat);
+    let bucket = opBuckets.get(key);
+    if (!bucket) {
+      bucket = { matrix: mat, units: [], atomCount: 0 };
+      opBuckets.set(key, bucket);
+    }
+    bucket.units.push(u);
+    bucket.atomCount += u.elements.length;
+  }
+
+  const buckets = Array.from(opBuckets.values());
+  if (buckets.length <= 1) return null;
+
+  // Verify uniform symmetry replication across all operator buckets
+  const refBucket = buckets[0];
+  const nAsuAtoms = refBucket.atomCount;
+  if (nAsuAtoms <= 0) return null;
+  for (let b = 1; b < buckets.length; b++) {
+    if (buckets[b].atomCount !== nAsuAtoms) {
+      return null;
+    }
+  }
+
+  const nTransforms = buckets.length;
+  const title = targetRef.cell.obj?.label || structure.label || 'Imported Mol* Symmetry Assembly';
+  const titleBytes = new TextEncoder().encode(title);
+  const modeStr = options?.mode ?? 'metal_verlet';
+  const modeBytes = new TextEncoder().encode(modeStr);
+
+  let cellBoxAng: [number, number, number] | undefined;
+  for (const u of refBucket.units) {
+    if (u.model.sourceData) {
+      const sym = ModelSymmetry.Provider.get(u.model);
+      const cSize = sym?.spacegroup.cell.size;
+      if (cSize && cSize[0] > 0) {
+        cellBoxAng = [cSize[0], cSize[1], cSize[2]];
+        break;
+      }
+    }
+  }
+
+  const headerSize = 48; // strictly 4-byte & 8-byte aligned
+  const coordsBytes = nAsuAtoms * 3 * 4;
+  const transformsBytes = nTransforms * 16 * 4;
+  const elemBytes = nAsuAtoms;
+  const totalBufferSize =
+    headerSize + coordsBytes + transformsBytes + elemBytes + titleBytes.length + modeBytes.length;
+
+  const ab = new ArrayBuffer(totalBufferSize);
+  const view = new DataView(ab);
+  const u8View = new Uint8Array(ab);
+
+  // 48-byte header `<4sIIIffIIfffI`
+  view.setUint8(0, 0x54); // 'T'
+  view.setUint8(1, 0x53); // 'S'
+  view.setUint8(2, 0x59); // 'Y'
+  view.setUint8(3, 0x4d); // 'M'
+  view.setUint32(4, nAsuAtoms, true);
+  view.setUint32(8, nTransforms, true);
+  view.setUint32(12, titleBytes.length, true);
+  view.setFloat32(16, options?.temperature ?? 300.0, true);
+  view.setFloat32(20, options?.dt ?? 0.001, true);
+  view.setUint32(24, modeBytes.length, true);
+  view.setUint32(28, 0x01, true); // flags: has_elements = 1
+  view.setFloat32(32, cellBoxAng ? cellBoxAng[0] : 0.0, true);
+  view.setFloat32(36, cellBoxAng ? cellBoxAng[1] : 0.0, true);
+  view.setFloat32(40, cellBoxAng ? cellBoxAng[2] : 0.0, true);
+  view.setUint32(44, 0, true); // reserved = 0
+
+  // Byte offset 48: Float32Array ASU coordinates (3 * n_asu_atoms)
+  const coordsOffset = headerSize;
+  const float32Coords = new Float32Array(ab, coordsOffset, nAsuAtoms * 3);
+
+  // Immediately after coords: Float32Array 4x4 row-major transforms (16 * n_transforms)
+  const transformsOffset = coordsOffset + coordsBytes;
+  const float32Transforms = new Float32Array(ab, transformsOffset, nTransforms * 16);
+
+  // After transforms: Uint8Array elements (n_asu_atoms)
+  const elemOffset = transformsOffset + transformsBytes;
+
+  // After elements: UTF-8 title and mode
+  let strOffset = elemOffset + elemBytes;
+  u8View.set(titleBytes, strOffset);
+  strOffset += titleBytes.length;
+  u8View.set(modeBytes, strOffset);
+
+  // Populate ASU coordinates (untransformed invariant positions) and element symbols
+  const tmpVec = Vec3();
+  let atomIdx = 0;
+  for (const unit of refBucket.units) {
+    const { elements: els, conformation, model } = unit;
+    const type_symbol = model.atomicHierarchy.atoms.type_symbol;
+    const hasInvariant = typeof conformation.invariantPosition === 'function';
+    const xCol = model.atomicConformation.x;
+    const yCol = model.atomicConformation.y;
+    const zCol = model.atomicConformation.z;
+
+    for (let uIdx = 0, len = els.length; uIdx < len; ++uIdx) {
+      const el = els[uIdx];
+      const cBase = atomIdx * 3;
+      if (hasInvariant) {
+        conformation.invariantPosition(el, tmpVec);
+        float32Coords[cBase + 0] = tmpVec[0];
+        float32Coords[cBase + 1] = tmpVec[1];
+        float32Coords[cBase + 2] = tmpVec[2];
+      } else {
+        float32Coords[cBase + 0] = xCol[el];
+        float32Coords[cBase + 1] = yCol[el];
+        float32Coords[cBase + 2] = zCol[el];
+      }
+      const sym = type_symbol.value(el);
+      u8View[elemOffset + atomIdx] = sym ? sym.charCodeAt(0) : 67; // 'C'
+      atomIdx++;
+    }
+  }
+
+  // Populate 4x4 row-major transforms (transposing Mol*'s column-major Mat4)
+  for (let t = 0; t < nTransforms; t++) {
+    const m = buckets[t].matrix;
+    const o = t * 16;
+    // Row 0
+    float32Transforms[o + 0] = m[0];
+    float32Transforms[o + 1] = m[4];
+    float32Transforms[o + 2] = m[8];
+    float32Transforms[o + 3] = m[12];
+    // Row 1
+    float32Transforms[o + 4] = m[1];
+    float32Transforms[o + 5] = m[5];
+    float32Transforms[o + 6] = m[9];
+    float32Transforms[o + 7] = m[13];
+    // Row 2
+    float32Transforms[o + 8] = m[2];
+    float32Transforms[o + 9] = m[6];
+    float32Transforms[o + 10] = m[10];
+    float32Transforms[o + 11] = m[14];
+    // Row 3
+    float32Transforms[o + 12] = m[3];
+    float32Transforms[o + 13] = m[7];
+    float32Transforms[o + 14] = m[11];
+    float32Transforms[o + 15] = m[15];
+  }
+
+  return {
+    title,
+    nAsuAtoms,
+    nTransforms,
+    totalAtoms,
+    buffer: ab,
+    box_ang: cellBoxAng,
+  };
+}

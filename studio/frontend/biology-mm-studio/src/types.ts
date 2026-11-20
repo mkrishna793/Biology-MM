@@ -5,6 +5,7 @@ export const STUDIO_PHYSICS_CHANNELS = [
   'bond-order',
   'atomic-stress',
   'ternary-state',
+  'multiscale-zone',
 ] as const;
 
 export type PhysicsChannelName = (typeof STUDIO_PHYSICS_CHANNELS)[number];
@@ -22,6 +23,48 @@ export type PaletteName =
   | 'bond-viridis'
   | 'stress-inferno'
   | 'ternary-triad';
+
+export type PhysicsHealthStatus = 'bounded' | 'warning' | 'clash';
+
+export interface MultiscaleZoneCounts {
+  all_atom: number;
+  coarse_grained: number;
+  rigid_scaffold: number;
+}
+
+export interface MultiscaleZoneConfig {
+  enabled: boolean;
+  center_ang: [number, number, number];
+  aa_radius_ang: number;
+  cg_radius_ang: number;
+  counts: MultiscaleZoneCounts;
+}
+
+export interface RelaxationReport {
+  ok?: boolean;
+  steps?: number;
+  initial_max_force?: number;
+  final_max_force?: number;
+  clashes_resolved?: number;
+  remaining_clashes?: number;
+  message?: string;
+  metrics?: SimulationMetrics;
+}
+
+export interface SteerAtomState {
+  active: boolean;
+  atom_index: number | null;
+  target_ang: [number, number, number] | null;
+  k_spring: number;
+}
+
+export interface DeltaStreamStats {
+  dirty_atoms?: number;
+  total_atoms?: number;
+  packet_bytes?: number;
+  compression_ratio?: number;
+  threshold_ang?: number;
+}
 
 export interface HardwareProfile {
   has_gpu: boolean;
@@ -65,6 +108,10 @@ export interface SimulationMetrics {
   gcmc_deleted_slots?: number[];
   session_id?: string;
   dropped_frames?: number;
+  drift_fraction?: number;
+  health_status?: PhysicsHealthStatus | string;
+  multiscale?: MultiscaleZoneConfig;
+  delta_stats?: DeltaStreamStats;
 }
 
 export interface AtomInspection {
@@ -146,4 +193,6 @@ export interface FrameStats {
   activePalette: PaletteName;
   reversed: boolean;
   wsConnected: boolean;
+  lastDirtyAtomCount: number;
+  lastPacketBytes: number;
 }

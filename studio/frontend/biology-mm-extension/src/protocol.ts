@@ -29,6 +29,7 @@ export const PHYSICS_CHANNELS = [
   'bond-order',
   'atomic-stress',
   'ternary-state',
+  'multiscale-zone',
 ] as const;
 
 export type PhysicsChannelName = (typeof PHYSICS_CHANNELS)[number];
@@ -249,6 +250,10 @@ export function decodeTriumMessage(buffer: ArrayBuffer): TriumMessage {
       let coords: Float32Array;
       if (header.flags & FrameFlags.INT16_FRACTIONAL) {
         const q16 = copyInt16Slice(buffer, off, 3 * header.nAtoms); off += 6 * header.nAtoms;
+        const pad = (4 - (off % 4)) % 4;
+        if (pad > 0 && off + pad <= HEADER_BYTES + header.payloadBytes) {
+          off += pad;
+        }
         coords = decodeInt16Fractional(q16, boxH);
       } else {
         coords = copyFloat32Slice(buffer, off, 3 * header.nAtoms); off += 12 * header.nAtoms;

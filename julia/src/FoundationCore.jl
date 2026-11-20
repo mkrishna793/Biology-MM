@@ -86,6 +86,7 @@ include("WaterBox.jl")
 include("TrajectoryFormat.jl")
 include("Workflow.jl")
 include("Alchemical.jl")
+include("Multiscale.jl")
 include("SymplecticTernary.jl")
 include("CustomPhysics.jl")
 include("ReactiveNano.jl")
@@ -124,6 +125,7 @@ using .Alchemical
 using .TriumXBT
 using .TriumGPU
 using .TernaryMSM
+using .Multiscale
 using .SymplecticTernary
 using .CustomPhysics
 using .ReactiveNano
@@ -137,7 +139,7 @@ export Types, Factors, Neighbors, Constraints, Settle, Dynamics, Respa, Sampling
        PolarizationOperator, Electrostatics, PME, ResolvedSystem, SystemContract,
        ChemistryFactors, ChemistryCMAP, Chemistry, MonteCarloBarostat, WaterBox,
        TrajectoryFormat, Workflow, Alchemical,
-       TriumXBT, TriumGPU, TernaryMSM, SymplecticTernary,
+       TriumXBT, TriumGPU, TernaryMSM, Multiscale, SymplecticTernary,
        CustomPhysics, ReactiveNano, GrandCanonical, NEMD, EnhancedSampling, Engine
 
 const VERSION = v"1.0.0"

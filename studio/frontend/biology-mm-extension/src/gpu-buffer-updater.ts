@@ -80,6 +80,8 @@ export class GpuParticleStreamUpdater {
   private _residueIds: Uint32Array = new Uint32Array(0);
   private _tileIds: Uint32Array = new Uint32Array(0);
   private _hasCell = false;
+  private _lastDirtyAtomCount = 0;
+  private _lastPacketBytes = 0;
 
   constructor(capacity = 1_000_000) {
     if (!Number.isInteger(capacity) || capacity <= 0) {
@@ -128,6 +130,14 @@ export class GpuParticleStreamUpdater {
 
   get tileIds(): Uint32Array {
     return this._tileIds;
+  }
+
+  get lastDirtyAtomCount(): number {
+    return this._lastDirtyAtomCount;
+  }
+
+  get lastPacketBytes(): number {
+    return this._lastPacketBytes;
   }
 
   getScalarRange(channel: PhysicsChannelName = this._activeChannel): ScalarRange {
@@ -199,6 +209,7 @@ export class GpuParticleStreamUpdater {
     this.attributes.clear();
     this.ensureAttribute(this._activeChannel);
 
+    this._lastDirtyAtomCount = n;
     this._topologyDirty = true;
     this._currentList = undefined;
   }
@@ -222,6 +233,7 @@ export class GpuParticleStreamUpdater {
 
     const coordLen = Math.min(n * 3, msg.coords.length);
     this.coords.set(msg.coords.subarray(0, coordLen), 0);
+    this._lastDirtyAtomCount = n;
 
     if (msg.scalars) {
       const channel = PHYSICS_CHANNELS[msg.scalarChannel] ?? this._activeChannel;
@@ -249,6 +261,8 @@ export class GpuParticleStreamUpdater {
     this._frameId = header.frameId;
     this._simTimePs = header.simTimePs;
     this._reversed = (header.flags & FrameFlags.REVERSED) !== 0;
+    this._lastDirtyAtomCount = n;
+    this._lastPacketBytes = buffer.byteLength;
 
     let off = HEADER_BYTES;
     const dv = new DataView(buffer);
@@ -308,21 +322,27 @@ export class GpuParticleStreamUpdater {
     }
   }
 
-  applyTilePatch(msg: FrameTilePatchMessage): void {
+  applyTilePatch(msg: FrameTilePatchMessage, packetBytes?: number): void {
+    // Sparse in-place scatter: update ONLY the dirty atomIndices slots without
+    // overwriting from offset 0 or mutating the total atom count.
     this._frameId = msg.header.frameId;
     this._simTimePs = msg.header.simTimePs;
-    this.boxH.set(msg.boxH.subarray(0, 9), 0);
-    this._hasCell = true;
+    this._reversed = (msg.header.flags & FrameFlags.REVERSED) !== 0;
+    if (msg.boxH && msg.boxH.length >= 9) {
+      this.boxH.set(msg.boxH.subarray(0, 9), 0);
+      this._hasCell = true;
+    }
 
     const indices = msg.atomIndices;
     const srcCoords = msg.coords;
     const dstCoords = this.coords;
     const count = indices.length;
+    const maxSrcCoords = srcCoords.length;
 
     for (let i = 0; i < count; i++) {
       const slot = indices[i];
-      if (slot >= this.capacity) continue;
       const s3 = i * 3;
+      if (slot >= this.capacity || s3 + 2 >= maxSrcCoords) continue;
       const d3 = slot * 3;
       dstCoords[d3] = srcCoords[s3];
       dstCoords[d3 + 1] = srcCoords[s3 + 1];
@@ -334,7 +354,8 @@ export class GpuParticleStreamUpdater {
       this._activeChannel = channel;
       const buf = this.getOrCreateChannelBuffer(channel);
       const srcScalars = msg.scalars;
-      for (let i = 0; i < count; i++) {
+      const maxSrcScalars = srcScalars.length;
+      for (let i = 0; i < count && i < maxSrcScalars; i++) {
         const slot = indices[i];
         if (slot < this.capacity) {
           buf[slot] = srcScalars[i];
@@ -342,6 +363,11 @@ export class GpuParticleStreamUpdater {
       }
       this.scalarRanges.set(channel, { min: msg.header.scalarMin, max: msg.header.scalarMax });
       this.ensureAttribute(channel);
+    }
+
+    this._lastDirtyAtomCount = count;
+    if (packetBytes !== undefined) {
+      this._lastPacketBytes = packetBytes;
     }
   }
 
