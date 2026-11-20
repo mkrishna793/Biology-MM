@@ -485,6 +485,11 @@ export class BiologyMmStreamController {
     }
   }
 
+  setBoxOrigin(origin: [number, number, number]): void {
+    if (this.disposed) return;
+    void this.overlayManager.setBoxOrigin(origin);
+  }
+
   setVolumeVisible(visible: boolean): void {
     this.volumeBridge.setVisible(visible);
   }

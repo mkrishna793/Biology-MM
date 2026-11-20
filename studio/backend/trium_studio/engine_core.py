@@ -847,6 +847,18 @@ class SimulationSession:
             else:
                 self._dihedral_quartets = np.zeros((0, 4), dtype=np.int32)
                 self._dihedral_phi0 = np.zeros(0, dtype=np.float64)
+
+            # Build comprehensive 1-2 (bond) and 1-3 (valence angle) non-bonded exclusions
+            excl_set = set()
+            for u, v in self.bonds:
+                u_i, v_i = int(u), int(v)
+                if u_i != v_i:
+                    excl_set.add((min(u_i, v_i), max(u_i, v_i)))
+            for i, j, k in ang_list:
+                i_i, k_i = int(i), int(k)
+                if i_i != k_i:
+                    excl_set.add((min(i_i, k_i), max(i_i, k_i)))
+            self._exclusion_pairs = sorted(list(excl_set))
         else:
             self._bond_pairs = np.zeros((0, 2), dtype=np.int32)
             self._bond_r0 = np.zeros(0, dtype=np.float64)
@@ -854,6 +866,7 @@ class SimulationSession:
             self._angle_theta0 = np.zeros(0, dtype=np.float64)
             self._dihedral_quartets = np.zeros((0, 4), dtype=np.int32)
             self._dihedral_phi0 = np.zeros(0, dtype=np.float64)
+            self._exclusion_pairs = []
 
         # Initialize Boltzmann momenta for real atoms with zero net COM drift
         v_scale = np.sqrt(self.k_b * max(1e-6, self.temperature) / self.masses[:n])[:, None]
@@ -930,7 +943,7 @@ class SimulationSession:
                     epsilon=self.epsilon[: self.n_real],
                     charges=self.charges[: self.n_real],
                     box=self.box_H,
-                    exclusions=self.system.bonds or None,
+                    exclusions=self._exclusion_pairs or None,
                     rcut=rc_safe,
                     skin=max(0.02, skin),
                     alpha_dsf=self.alpha_dsf,
@@ -1246,7 +1259,15 @@ class SimulationSession:
         if ii.size == 0:
             return 0.0, f, vir
 
-        if self._bond_pairs.shape[0] > 0:
+        if getattr(self, "_exclusion_pairs", None):
+            excl_arr = np.asarray(self._exclusion_pairs, dtype=np.int64)
+            excl_keys = excl_arr[:, 0] * n + excl_arr[:, 1]
+            pair_keys = ii.astype(np.int64) * n + jj.astype(np.int64)
+            keep = ~np.isin(pair_keys, excl_keys)
+            ii, jj, d_ij, r = ii[keep], jj[keep], d_ij[keep], r[keep]
+            if ii.size == 0:
+                return 0.0, f, vir
+        elif self._bond_pairs.shape[0] > 0:
             bp = self._bond_pairs
             b_lo = np.minimum(bp[:, 0], bp[:, 1]).astype(np.int64)
             b_hi = np.maximum(bp[:, 0], bp[:, 1]).astype(np.int64)
@@ -1879,6 +1900,7 @@ class SimulationSession:
                 "ms_per_step": float(self.last_ms_per_step),
                 "ns_per_day_2fs": float(ns_per_day),
                 "box_lengths_nm": [float(self.box_H[0, 0]), float(self.box_H[1, 1]), float(self.box_H[2, 2])],
+                "box_origin_ang": [0.0, 0.0, 0.0],
                 "volume_nm3": vol_nm3,
                 "stress_zz": float(self.virial[2, 2] / max(vol_nm3, 1e-9)),
                 "mode": self.mode,
@@ -1950,6 +1972,7 @@ class SimulationSession:
                 np.diag(self.box_H),
                 self.sigma[:n],
                 self.epsilon[:n],
+                exclusions=getattr(self, "_exclusion_pairs", None),
                 max_steps=max_steps,
                 max_force_cap=max_force_cap,
                 alpha_sc=alpha_sc,

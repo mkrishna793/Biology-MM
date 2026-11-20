@@ -748,5 +748,171 @@ class TestAllThreeEnginesFullRestAndWsAudit(unittest.TestCase):
         self.assertIn("coarse_grained", ms_sc["counts"])
         self.assertIn("rigid_scaffold", ms_sc["counts"])
 
+class TestBackendReliabilityRegressions(unittest.TestCase):
+    """Regression tests for hollow-capsid focus, startup clash, RCSB proxy, and WS worker."""
+
+    def setUp(self) -> None:
+        self.app = create_app()
+        self.client = TestClient(self.app)
+
+    def tearDown(self) -> None:
+        self.app.state.session_manager.close_all()
+
+    def test_hollow_capsid_auto_centers_on_wall_and_exposes_box_origin(self) -> None:
+        from trium_studio.tryte_tiles import TryteTileFullAtomSession
+
+        # Build a 5J7V-like hollow spherical capsid shell (R = 20 nm = 200 A, empty center at 0,0,0)
+        n = 2700
+        idx = np.arange(n, dtype=np.float64)
+        phi = np.arccos(1.0 - 2.0 * (idx + 0.5) / n)
+        theta = np.pi * (1.0 + 5.0 ** 0.5) * idx
+        r_nm = 20.0
+        pos_nm = np.stack(
+            [
+                r_nm * np.sin(phi) * np.cos(theta),
+                r_nm * np.sin(phi) * np.sin(theta),
+                r_nm * np.cos(phi),
+            ],
+            axis=1,
+        ).astype(np.float32)
+        z = np.full(n, 6, dtype=np.uint8)
+
+        sim = TryteTileFullAtomSession(
+            positions_nm=pos_nm,
+            atomic_numbers=z,
+            max_active_aa_atoms=540,
+            aa_radius_ang=45.0,
+            cg_radius_ang=85.0,
+        )
+        try:
+            metrics = sim.get_metrics()
+            ms = metrics["multiscale"]
+            # Must auto-center on the capsid wall (first surface tile centroid), NOT empty (0, 0, 0)
+            expected_ctr = sim.tile_set.centroids_nm[0].astype(np.float64) * 10.0
+            np.testing.assert_allclose(ms["center_ang"], expected_ctr, atol=1e-3)
+            self.assertGreater(float(np.linalg.norm(ms["center_ang"])), 150.0)
+
+            # Both All-Atom and Coarse-Grained zones must be populated (> 0)
+            self.assertGreater(ms["counts"]["all_atom"], 0)
+            self.assertGreater(ms["counts"]["coarse_grained"], 0)
+            self.assertGreater(ms["n_all_atom"], 0)
+            self.assertGreater(ms["n_coarse_grained"], 0)
+
+            # box_origin_ang must be exposed and match min_xyz (with the 9 A box margin)
+            self.assertIn("box_origin_ang", metrics)
+            expected_origin = (np.min(sim.positions_nm, axis=0).astype(np.float64) - 0.9) * 10.0
+            np.testing.assert_allclose(metrics["box_origin_ang"], expected_origin, atol=1e-2)
+            # Verify origin is negative (around -209 A), not (0, 0, 0)
+            self.assertLess(metrics["box_origin_ang"][0], -150.0)
+        finally:
+            sim.close()
+
+        # Also verify box_origin_ang is exposed on CompactSymmetryMultiscaleSession and SimulationSession
+        tsym_bytes = _make_tsym_assembly(n_asu=12, n_transforms=8)
+        r_sc = self.client.post(
+            "/api/sessions/create-from-symmetry?storage_mode=symmetry-compact",
+            content=tsym_bytes,
+        )
+        self.assertEqual(r_sc.status_code, 200, r_sc.text)
+        self.assertEqual(len(r_sc.json()["metrics"]["box_origin_ang"]), 3)
+
+        r_sim = self.client.post("/api/sessions/upload?filename=ethanol.mol2&storage_mode=auto", content=SAMPLE_MOL2)
+        self.assertEqual(r_sim.status_code, 200, r_sim.text)
+        self.assertEqual(len(r_sim.json()["metrics"]["box_origin_ang"]), 3)
+
+    def test_biomolecular_complex_preset_boots_without_clash(self) -> None:
+        res = self.client.post("/api/sessions", json={"preset_id": "biomolecular-complex"})
+        self.assertEqual(res.status_code, 200, res.text)
+        metrics = res.json()["metrics"]
+        self.assertNotEqual(metrics["health_status"], "clash")
+        self.assertEqual(metrics["health_status"], "bounded")
+
+    def test_rcsb_proxy_validation_and_cors_headers(self) -> None:
+        from unittest.mock import MagicMock, patch
+        import urllib.error
+
+        # Invalid PDB IDs must return HTTP 400 cleanly
+        for bad_id in ("BAD!ID", "AB", "1234567890123"):
+            r_bad = self.client.get(f"/api/structures/fetch/{bad_id}")
+            self.assertEqual(r_bad.status_code, 400, f"Expected 400 for {bad_id}, got {r_bad.status_code}")
+
+        # Invalid format returns HTTP 400
+        r_fmt = self.client.get("/api/structures/fetch/3J3Q?fmt=xyz")
+        self.assertEqual(r_fmt.status_code, 400)
+
+        # Mocked successful fetch returns 200 + Access-Control-Allow-Origin: *
+        mock_resp = MagicMock()
+        mock_resp.read.return_value = b"data_3J3Q\n"
+        mock_resp.__enter__.return_value = mock_resp
+        mock_resp.__exit__.return_value = False
+        with patch("urllib.request.urlopen", return_value=mock_resp) as m_open:
+            r_ok = self.client.get("/api/structures/fetch/3J3Q?fmt=cif")
+            self.assertEqual(r_ok.status_code, 200, r_ok.text)
+            self.assertEqual(r_ok.headers.get("access-control-allow-origin"), "*")
+            self.assertIn(b"data_3J3Q", r_ok.content)
+            req_arg = m_open.call_args[0][0]
+            self.assertEqual(req_arg.full_url, "https://files.rcsb.org/download/3J3Q.cif")
+
+        with patch("urllib.request.urlopen", return_value=mock_resp) as m_open:
+            r_bcif = self.client.get("/api/structures/fetch/3J3Q?fmt=bcif")
+            self.assertEqual(r_bcif.status_code, 200, r_bcif.text)
+            self.assertEqual(r_bcif.headers.get("access-control-allow-origin"), "*")
+            req_arg = m_open.call_args[0][0]
+            self.assertEqual(req_arg.full_url, "https://models.rcsb.org/v1/3J3Q/full?encoding=bcif")
+
+        # Upstream error -> 502, timeout -> 504
+        with patch("urllib.request.urlopen", side_effect=urllib.error.URLError("upstream down")):
+            r_502 = self.client.get("/api/structures/fetch/3J3Q")
+            self.assertEqual(r_502.status_code, 502)
+
+        with patch("urllib.request.urlopen", side_effect=TimeoutError("timed out")):
+            r_504 = self.client.get("/api/structures/fetch/3J3Q")
+            self.assertEqual(r_504.status_code, 504)
+
+    def test_ws_manager_adaptive_steps_and_worker_error_surfacing(self) -> None:
+        from types import SimpleNamespace
+        from trium_studio.ws_manager import SessionManager
+
+        # Adaptive step counts for >500k, >50k, and smaller metal_verlet / non-verlet systems
+        self.assertEqual(SessionManager._steps_per_tick(SimpleNamespace(n_atoms=40_000_000, mode="metal_verlet")), 1)
+        self.assertEqual(SessionManager._steps_per_tick(SimpleNamespace(n_atoms=500_001, mode="metal_verlet")), 1)
+        self.assertEqual(SessionManager._steps_per_tick(SimpleNamespace(n_atoms=100_000, mode="metal_verlet")), 2)
+        self.assertEqual(SessionManager._steps_per_tick(SimpleNamespace(n_atoms=1_000, mode="metal_verlet")), 10)
+        self.assertEqual(SessionManager._steps_per_tick(SimpleNamespace(n_atoms=1_000, mode="cnt_tersoff")), 2)
+
+        # Worker error surfacing via ManagedSession.last_error -> WS {"type": "error", "error": ...}
+        r = self.client.post("/api/sessions/upload?filename=ethanol.mol2&storage_mode=auto", content=SAMPLE_MOL2)
+        self.assertEqual(r.status_code, 200, r.text)
+        sid = r.json()["session_id"]
+        record = self.app.state.session_manager.get_session(sid)
+        self.assertIsNotNone(record)
+
+        def _failing_step(*_args: Any, **_kwargs: Any) -> Dict[str, Any]:
+            raise RuntimeError("synthetic worker boom")
+
+        record.session.step = _failing_step  # type: ignore[method-assign]
+
+        with self.client.websocket_connect(f"/ws/stream/{sid}") as ws:
+            # Drain initial handshake (3 binary + 2 json)
+            ws.receive_bytes()
+            ws.receive_bytes()
+            ws.receive_bytes()
+            ws.receive_json()
+            ws.receive_json()
+
+            ws.send_json({"type": "play"})
+            saw_error = None
+            for _ in range(30):
+                msg = ws.receive()
+                if "text" in msg and msg["text"] is not None:
+                    data = json.loads(msg["text"])
+                    if data.get("type") == "error":
+                        saw_error = data
+                        break
+            self.assertIsNotNone(saw_error, "Expected worker exception to be surfaced over WS")
+            self.assertIn("synthetic worker boom", saw_error["error"])
+            self.assertFalse(record.playing)
+
+
 if __name__ == "__main__":
     unittest.main()

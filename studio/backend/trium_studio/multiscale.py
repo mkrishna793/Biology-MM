@@ -419,6 +419,7 @@ def _eval_softcore_lj(
     rcut: float,
     alpha_sc: float,
     lam: float,
+    exclusions: Optional[Sequence[Tuple[int, int]]] = None,
 ) -> Tuple[float, np.ndarray, int]:
     """
     Evaluate Beutler soft-core Lennard-Jones energy & forces with a smooth core push
@@ -433,6 +434,17 @@ def _eval_softcore_lj(
     ii, jj, d_ij, r = _find_neighbor_pairs_mic(positions_nm, box_L, rcut)
     if ii.size == 0:
         return 0.0, forces, 0
+
+    if exclusions:
+        excl_arr = np.asarray(exclusions, dtype=np.int64)
+        lo = np.minimum(excl_arr[:, 0], excl_arr[:, 1])
+        hi = np.maximum(excl_arr[:, 0], excl_arr[:, 1])
+        excl_keys = lo * n + hi
+        pair_keys = ii.astype(np.int64) * n + jj.astype(np.int64)
+        keep = ~np.isin(pair_keys, excl_keys)
+        ii, jj, d_ij, r = ii[keep], jj[keep], d_ij[keep], r[keep]
+        if ii.size == 0:
+            return 0.0, forces, 0
 
     sig_ij = 0.5 * (sigma_arr[ii] + sigma_arr[jj])
     eps_ij = np.sqrt(np.maximum(epsilon_arr[ii] * epsilon_arr[jj], 0.0))
@@ -492,6 +504,7 @@ def softcore_relax_clashes(
     box_nm: Union[Sequence[float], np.ndarray],
     sigma_nm: Union[float, np.ndarray],
     epsilon_kj: Union[float, np.ndarray],
+    exclusions: Optional[Sequence[Tuple[int, int]]] = None,
     max_steps: int = 40,
     max_force_cap: float = 5000.0,
     alpha_sc: float = 0.5,
@@ -539,7 +552,7 @@ def softcore_relax_clashes(
     inv_L = 1.0 / np.maximum(box_L, 1e-9)
     pos = (pos * inv_L[None, :] - np.floor(pos * inv_L[None, :])) * box_L[None, :]
 
-    e_init, f_init, initial_clashes = _eval_softcore_lj(pos, box_L, sigma_arr, eps_arr, rcut, alpha_sc, lam)
+    e_init, f_init, initial_clashes = _eval_softcore_lj(pos, box_L, sigma_arr, eps_arr, rcut, alpha_sc, lam, exclusions=exclusions)
     fmax_init = float(np.max(np.linalg.norm(f_init, axis=1)))
 
     if initial_clashes == 0 and fmax_init < 100.0:
@@ -578,7 +591,7 @@ def softcore_relax_clashes(
         disp = f_capped * (step_size / fc_max)
         cand = pos + disp
         cand = (cand * inv_L[None, :] - np.floor(cand * inv_L[None, :])) * box_L[None, :]
-        e_new, f_new, clashes_new = _eval_softcore_lj(cand, box_L, sigma_arr, eps_arr, rcut, alpha_sc, lam)
+        e_new, f_new, clashes_new = _eval_softcore_lj(cand, box_L, sigma_arr, eps_arr, rcut, alpha_sc, lam, exclusions=exclusions)
         steps_run = step
 
         if np.isfinite(e_new) and e_new <= e_curr:

@@ -512,6 +512,8 @@ def create_preset_session(preset_id: str) -> SimulationSession:
             structure_metadata=meta,
         )
         sess.minimize()
+        if sess.get_metrics().get("max_force", 0.0) > 5000.0:
+            sess.relax_clashes(max_steps=30)
         return sess
 
     if preset_id == "cnt-tersoff-tensile":

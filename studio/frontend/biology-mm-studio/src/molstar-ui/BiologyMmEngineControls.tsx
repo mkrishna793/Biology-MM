@@ -576,7 +576,9 @@ export class BiologyMmEngineControls extends CollapsableControls<CollapsableProp
                 }
               />
               <span className="bmm-msp-stat">
-                {currentStep}/{maxStep}
+                {historySteps.length <= 1 && currentStep > 0
+                  ? `step ${currentStep}`
+                  : `${currentStep}/${maxStep}`}
               </span>
             </div>
           }

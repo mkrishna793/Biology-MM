@@ -304,6 +304,12 @@ export class BiologyMmStudioStore {
     if (nextHistory.length > MAX_TELEMETRY_POINTS) {
       nextHistory.splice(0, nextHistory.length - MAX_TELEMETRY_POINTS);
     }
+    if (m.box_origin_ang) {
+      const ctrl = this.resolveController();
+      if (ctrl) {
+        ctrl.setBoxOrigin(m.box_origin_ang);
+      }
+    }
     this.setState({
       metrics: m,
       metricHistory: nextHistory,
@@ -417,6 +423,7 @@ export class BiologyMmStudioStore {
     const activateOpts = { keepExternalVisible: preserveExternalScaffold, storageMode };
 
     if (ctrl) {
+      ctrl.setBoxOrigin(this.state.metrics?.box_origin_ang ?? [0, 0, 0]);
       ctrl.setPalette(palette);
       if (!preserveExternalScaffold && nAtoms > 0 && nAtoms <= BiologyMmStreamController.NATIVE_STRUCTURE_ATOM_LIMIT) {
         try {

@@ -119,9 +119,10 @@ export function computeBoxWireframeSegments(
 export function buildBoxWireframeShape(
   boxH: Float32Array,
   prevShape?: Shape<Lines>,
+  origin: ArrayLike<number> = [0, 0, 0],
   color: Color = Color(0x60a5fa),
 ): Shape<Lines> {
-  const segments = computeBoxWireframeSegments(boxH);
+  const segments = computeBoxWireframeSegments(boxH, origin);
   const builder = LinesBuilder.create(12, 12, prevShape?.geometry);
   for (let e = 0; e < 12; e++) {
     const s6 = e * 6;
@@ -138,7 +139,7 @@ export function buildBoxWireframeShape(
   const lines = builder.getLines();
   return ShapeUtils.create(
     'PBC Unit Cell',
-    { boxH },
+    { boxH, origin },
     lines,
     () => color,
     () => 1.5,
@@ -402,6 +403,7 @@ export class PhysicsOverlayManager {
   private forcesSlot: OverlaySlot<Mesh> = {};
 
   private lastBoxH?: Float32Array;
+  private lastBoxOrigin: [number, number, number] = [0, 0, 0];
   private lastCoords?: Float32Array;
   private lastBondPairs?: Uint32Array;
   private lastBondOrders?: Float32Array;
@@ -427,15 +429,50 @@ export class PhysicsOverlayManager {
     setSubtreeVisibility(this.plugin.state.data, ref, !visible);
   }
 
-  async updateBox(boxH: Float32Array): Promise<void> {
+  async setBoxOrigin(origin: [number, number, number]): Promise<void> {
+    if (
+      !Array.isArray(origin) ||
+      origin.length < 3 ||
+      !Number.isFinite(origin[0]) ||
+      !Number.isFinite(origin[1]) ||
+      !Number.isFinite(origin[2])
+    ) {
+      return;
+    }
+    const next: [number, number, number] = [origin[0], origin[1], origin[2]];
+    const unchanged =
+      Math.abs(next[0] - this.lastBoxOrigin[0]) < 1e-6 &&
+      Math.abs(next[1] - this.lastBoxOrigin[1]) < 1e-6 &&
+      Math.abs(next[2] - this.lastBoxOrigin[2]) < 1e-6;
+    this.lastBoxOrigin = next;
+    if (!unchanged && this.lastBoxH && this.visibility.showBox) {
+      await this.updateBox(this.lastBoxH, this.lastBoxOrigin);
+    }
+  }
+
+  async updateBox(boxH: Float32Array, origin?: [number, number, number]): Promise<void> {
     this.lastBoxH = new Float32Array(boxH);
-    const provider: ShapeProvider<{ boxH: Float32Array }, Lines, Lines.Params> = {
+    if (
+      origin &&
+      origin.length >= 3 &&
+      Number.isFinite(origin[0]) &&
+      Number.isFinite(origin[1]) &&
+      Number.isFinite(origin[2])
+    ) {
+      this.lastBoxOrigin = [origin[0], origin[1], origin[2]];
+    }
+    const boxOrigin: [number, number, number] = [
+      this.lastBoxOrigin[0],
+      this.lastBoxOrigin[1],
+      this.lastBoxOrigin[2],
+    ];
+    const provider: ShapeProvider<{ boxH: Float32Array; origin: [number, number, number] }, Lines, Lines.Params> = {
       label: 'PBC Unit Cell',
-      data: { boxH: this.lastBoxH },
+      data: { boxH: this.lastBoxH, origin: boxOrigin },
       params: Lines.Params,
       geometryUtils: Lines.Utils,
       getShape: (_ctx, data, _props, prev) => {
-        const shape = buildBoxWireframeShape(data.boxH, prev);
+        const shape = buildBoxWireframeShape(data.boxH, prev, data.origin);
         this.boxSlot.lastShape = shape;
         return shape;
       },

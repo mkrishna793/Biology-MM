@@ -43,6 +43,7 @@ class ManagedSession:
     lock: threading.RLock = field(default_factory=threading.RLock)
     stop_event: threading.Event = field(default_factory=threading.Event)
     worker_thread: Optional[threading.Thread] = None
+    last_error: Optional[str] = None
     created_at: float = field(default_factory=time.time)
 
 
@@ -110,6 +111,15 @@ class SessionManager:
             record.worker_thread = t
             t.start()
 
+    @staticmethod
+    def _steps_per_tick(session: Any) -> int:
+        n_atoms = int(getattr(session, "n_atoms", getattr(session, "n_real", 0)))
+        if n_atoms > 500_000:
+            return 1
+        if n_atoms > 50_000:
+            return 2
+        return 10 if getattr(session, "mode", "") == "metal_verlet" else 2
+
     def _simulation_loop(self, record: ManagedSession) -> None:
         while not record.stop_event.is_set():
             if not record.playing:
@@ -117,7 +127,7 @@ class SessionManager:
                 continue
             t0 = time.perf_counter()
             try:
-                steps = 10 if record.session.mode == "metal_verlet" else 2
+                steps = self._steps_per_tick(record.session)
                 metrics = record.session.step(n_steps=steps)
                 frame_pkt = record.session.encode_frame_packet(
                     channel_name=record.active_channel,
@@ -125,8 +135,10 @@ class SessionManager:
                 )
                 vol_pkt = record.session.encode_volume_packet() if record.show_volume else None
                 record.frame_buffer.push(frame_pkt, metrics, volume_packet=vol_pkt)
-            except Exception:
-                record.playing = False
+            except Exception as exc:
+                with record.lock:
+                    record.last_error = str(exc) or repr(exc)
+                    record.playing = False
             elapsed = time.perf_counter() - t0
             sleep_s = max(0.005, 0.033 - elapsed)
             time.sleep(sleep_s)
@@ -207,6 +219,21 @@ class SessionManager:
 
     async def _sender_loop(self, websocket: WebSocket, record: ManagedSession) -> None:
         while True:
+            err: Optional[str] = None
+            with record.lock:
+                if record.last_error is not None:
+                    err = record.last_error
+                    record.last_error = None
+            if err is not None:
+                await websocket.send_json({"type": "error", "error": err})
+                await websocket.send_json(
+                    {
+                        "type": "state",
+                        "playing": record.playing,
+                        "active_channel": record.active_channel,
+                        "palette": record.palette,
+                    }
+                )
             frame_pkt, metrics, vol_pkt, dropped = record.frame_buffer.pop_latest()
             if frame_pkt is not None:
                 await websocket.send_bytes(frame_pkt)
@@ -232,7 +259,9 @@ class SessionManager:
             kind = str(msg.get("type") or msg.get("action") or "").strip()
             try:
                 if kind == "play":
-                    record.playing = True
+                    with record.lock:
+                        record.last_error = None
+                        record.playing = True
                     self._ensure_worker(record)
                     await websocket.send_json(
                         {

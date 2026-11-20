@@ -101,6 +101,7 @@ export interface SimulationMetrics {
   ms_per_step: number;
   ns_per_day_2fs: number;
   box_lengths_nm: [number, number, number];
+  box_origin_ang?: [number, number, number];
   volume_nm3: number;
   stress_zz: number;
   mode: string;

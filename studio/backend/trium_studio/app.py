@@ -2,6 +2,11 @@
 
 from __future__ import annotations
 
+import asyncio
+import re
+import socket
+import urllib.error
+import urllib.request
 from contextlib import asynccontextmanager
 from dataclasses import asdict
 from pathlib import Path
@@ -293,6 +298,74 @@ def create_app(dist_dir: Optional[Path] = None) -> FastAPI:
     @application.get("/api/presets")
     async def presets() -> list[Dict[str, Any]]:
         return list_presets()
+
+    @application.get("/api/structures/fetch/{pdb_id}")
+    async def fetch_rcsb_structure(
+        pdb_id: str,
+        fmt: str = Query("cif"),
+    ) -> Response:
+        cleaned_id = str(pdb_id or "").strip()
+        if not re.fullmatch(r"[A-Za-z0-9]{4,12}", cleaned_id):
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid PDB ID '{pdb_id}'; expected 4-12 alphanumeric characters",
+            )
+        fmt_clean = str(fmt or "cif").strip().lower()
+        if fmt_clean not in ("cif", "bcif"):
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid format '{fmt}'; expected 'cif' or 'bcif'",
+            )
+        pdb_upper = cleaned_id.upper()
+        if fmt_clean == "bcif":
+            upstream_url = f"https://models.rcsb.org/v1/{pdb_upper}/full?encoding=bcif"
+            media_type = "application/octet-stream"
+            out_filename = f"{pdb_upper}.bcif"
+        else:
+            upstream_url = f"https://files.rcsb.org/download/{pdb_upper}.cif"
+            media_type = "chemical/x-cif"
+            out_filename = f"{pdb_upper}.cif"
+
+        def _download_bytes() -> bytes:
+            req = urllib.request.Request(
+                upstream_url,
+                headers={"User-Agent": f"Biology-MM-Studio/{STUDIO_VERSION}"},
+            )
+            with urllib.request.urlopen(req, timeout=60.0) as resp:
+                return resp.read()
+
+        try:
+            data = await asyncio.to_thread(_download_bytes)
+        except (TimeoutError, socket.timeout) as exc:
+            raise HTTPException(
+                status_code=504,
+                detail=f"Timed out fetching RCSB structure '{pdb_upper}' ({fmt_clean}): {exc}",
+            ) from exc
+        except urllib.error.HTTPError as exc:
+            raise HTTPException(
+                status_code=502,
+                detail=f"RCSB upstream returned HTTP {exc.code} for '{pdb_upper}' ({fmt_clean})",
+            ) from exc
+        except urllib.error.URLError as exc:
+            if isinstance(exc.reason, (TimeoutError, socket.timeout)):
+                raise HTTPException(
+                    status_code=504,
+                    detail=f"Timed out fetching RCSB structure '{pdb_upper}' ({fmt_clean}): {exc.reason}",
+                ) from exc
+            raise HTTPException(
+                status_code=502,
+                detail=f"Failed to fetch RCSB structure '{pdb_upper}' ({fmt_clean}): {exc.reason}",
+            ) from exc
+
+        return Response(
+            content=data,
+            media_type=media_type,
+            headers={
+                "Access-Control-Allow-Origin": "*",
+                "Content-Disposition": f'inline; filename="{out_filename}"',
+                "Cache-Control": "public, max-age=86400",
+            },
+        )
 
     @application.post("/api/sessions")
     async def create_session(payload: Optional[CreateSessionRequest] = None) -> Dict[str, Any]:

@@ -1724,6 +1724,7 @@ class CompactSymmetryMultiscaleSession:
                 "ms_per_step": float(self.last_ms_per_step),
                 "ns_per_day_2fs": float(ns_per_day),
                 "box_lengths_nm": [float(self.box_H[0, 0]), float(self.box_H[1, 1]), float(self.box_H[2, 2])],
+                "box_origin_ang": [float(self._box_origin_ang[0]), float(self._box_origin_ang[1]), float(self._box_origin_ang[2])],
                 "volume_nm3": vol_nm3,
                 "stress_zz": float(self.virial[2, 2] / max(vol_nm3, 1e-9)),
                 "mode": self.mode,

@@ -785,13 +785,40 @@ class TryteTileFullAtomSession:
         self._box_origin_ang: np.ndarray = (self._box_origin_nm * 10.0).astype(np.float32)
 
         # Focus zone & active tile subset
-        self._focus_center_ang: Tuple[float, float, float] = (
-            (float(focus_center_ang[0]), float(focus_center_ang[1]), float(focus_center_ang[2]))
-            if focus_center_ang is not None and len(focus_center_ang) == 3
-            else default_center_ang
-        )
         self._aa_radius_ang: float = max(0.0, float(aa_radius_ang))
         self._cg_radius_ang: float = max(self._aa_radius_ang, float(cg_radius_ang))
+
+        if focus_center_ang is not None and len(focus_center_ang) == 3:
+            self._focus_center_ang = (
+                float(focus_center_ang[0]),
+                float(focus_center_ang[1]),
+                float(focus_center_ang[2]),
+            )
+        else:
+            # Detect hollow structures (e.g. viral capsids 5J7V / 3J3Q) whose global
+            # geometric center is empty space (< 5 tiles within aa_radius_ang).
+            if self.tile_set.n_tiles > 0:
+                c_t = self.tile_set.centroids_nm.astype(np.float64)
+                r_t = self.tile_set.bounding_radii_nm.astype(np.float64)
+                ctr_nm = np.asarray(default_center_ang, dtype=np.float64) * 0.1
+                r_aa_nm = self._aa_radius_ang * 0.1
+                n_near = int(np.sum(np.linalg.norm(c_t - ctr_nm[None, :], axis=1) <= (r_aa_nm + r_t)))
+                if n_near < 5:
+                    surface_nm = c_t[0]
+                    default_center_ang = tuple(float(v) for v in (surface_nm * 10.0))
+                    if n > self.max_active_aa_atoms and self.tile_set.n_tiles > 1:
+                        d_surf_ang = np.linalg.norm(c_t - surface_nm[None, :], axis=1) * 10.0
+                        r_t_ang = r_t * 10.0
+                        max_aa_tiles = max(1, self.max_active_aa_atoms // self.tile_size)
+                        aa_cnt = int(np.sum(d_surf_ang <= (self._aa_radius_ang + r_t_ang)))
+                        eff_aa = min(max_aa_tiles, max(1, aa_cnt))
+                        if eff_aa < self.tile_set.n_tiles:
+                            sorted_d = np.sort(d_surf_ang)
+                            cg_target_idx = min(self.tile_set.n_tiles - 1, eff_aa + max(4, eff_aa // 4))
+                            min_cg_r = float(sorted_d[cg_target_idx]) + 5.0
+                            if self._cg_radius_ang < min_cg_r:
+                                self._cg_radius_ang = min_cg_r
+            self._focus_center_ang = default_center_ang
 
         self._active_tile_ids: np.ndarray = np.zeros(0, dtype=np.int32)
         self._active_atom_indices: np.ndarray = np.zeros(0, dtype=np.int32)
@@ -1940,6 +1967,7 @@ class TryteTileFullAtomSession:
                 "ms_per_step": float(self.last_ms_per_step),
                 "ns_per_day_2fs": float(ns_per_day),
                 "box_lengths_nm": [float(self.box_H[0, 0]), float(self.box_H[1, 1]), float(self.box_H[2, 2])],
+                "box_origin_ang": [float(self._box_origin_ang[0]), float(self._box_origin_ang[1]), float(self._box_origin_ang[2])],
                 "volume_nm3": vol_nm3,
                 "stress_zz": float(self.virial[2, 2] / max(vol_nm3, 1e-9)),
                 "mode": self.mode,

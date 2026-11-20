@@ -214,7 +214,10 @@ inline bool is_pair_excluded(
     uint n_excl
 ) {
     if (n_excl == 0u || excl_keys == nullptr) return false;
-    ulong key = (a < b) ? (((ulong)a << 32) | (ulong)b) : (((ulong)b << 32) | (ulong)a);
+    if (a == 0xFFFFFFFFu || b == 0xFFFFFFFFu || a == b) return true;
+    ulong a1 = (ulong)(a + 1u);
+    ulong b1 = (ulong)(b + 1u);
+    ulong key = (a < b) ? ((a1 << 32) | b1) : ((b1 << 32) | a1);
     int low = 0;
     int high = (int)n_excl - 1;
     while (low <= high) {
@@ -267,14 +270,15 @@ inline void eval_pair_force_tile(
     if (u.do_coul != 0u) {
         float qq = pos_a.w * pos_b.w * u.coulomb_prefactor;
         if (abs(qq) > 1e-8f) {
-            float z = r2 * u.inv_du;
-            int k = clamp((int)z, 0, 511);
-            float dz = z - (float)k;
-            float4 tab = dsf_table[k];
-            float phi = tab.x + dz * (tab.y + dz * (tab.z + dz * tab.w));
-            float dphi = (tab.y + dz * (2.0f * tab.z + dz * 3.0f * tab.w)) * (2.0f * u.inv_du);
-            f_scalar += -qq * dphi;
-            u_accum += qq * (phi - u.Brc);
+            const int tidx = clamp((int)(r2 * u.inv_du), 0, 511);
+            const float dt = r2 - ((float)tidx + 0.5f) * u.du;
+            const float4 c = dsf_table[tidx];
+            const float phi0  = fma(dt, fma(dt, fma(dt, c.w, c.z), c.y), c.x);
+            const float dphi0 = fma(dt, fma(dt, 3.0f * c.w, 2.0f * c.z), c.y);
+            const float erfc_over_r = inv_r - phi0;
+            const float inv_r3 = inv_r2 * inv_r;
+            u_accum += qq * ((erfc_over_r - u.Brc) + u.Arc * r);
+            f_scalar += qq * (inv_r3 + 2.0f * dphi0 - u.Arc * inv_r);
         }
     }
 
@@ -1545,27 +1549,9 @@ XBT_GPU_EXPORT void* xbt_gpu_verlet_plan_create(
         }
 
         if (plan->do_coul) {
-            Float4* dsf_tab = static_cast<Float4*>([plan->buf_dsf_table contents]);
-            const double alpha = plan->alpha_dsf;
-            const double du = plan->du;
-            const double two_a_sqrtpi = 2.0 * alpha / SQRT_PI;
-            for (int k = 0; k < DSF_N_TAB; ++k) {
-                const double r2_k = (static_cast<double>(k) + 0.5) * du;
-                const double r_k = std::sqrt(r2_k);
-                const double z_k = alpha * r_k;
-                const double erfc_zk = std::erfc(z_k);
-                const double exp_zk = std::exp(-alpha * alpha * r2_k);
-                const double inv_rk = 1.0 / r_k;
-                const double inv_rk2 = inv_rk * inv_rk;
-                const double phi = erfc_zk * inv_rk - plan->Brc + plan->Arc * r_k;
-                const double dphi = -(erfc_zk * inv_rk2 + two_a_sqrtpi * exp_zk * inv_rk) + plan->Arc;
-                dsf_tab[k] = Float4{
-                    static_cast<float>(phi),
-                    static_cast<float>(dphi),
-                    0.0f,
-                    0.0f
-                };
-            }
+            build_dsf_table_float4(rcut, alpha_dsf, static_cast<Float4*>([plan->buf_dsf_table contents]));
+        } else {
+            std::memset([plan->buf_dsf_table contents], 0, DSF_N_TAB * sizeof(Float4));
         }
 
         return plan.release();
