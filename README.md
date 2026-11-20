@@ -15,6 +15,7 @@
 | `julia/bin/md.jl` | Headless JSON CLI runner (`--backend <auto\|cpu\|gpu\|metal\|vulkan\|sycl>`, `--info`) |
 | `julia/test/` | **57 Julia test suites** + single-command runner (`julia --project=. test/run_all.jl`) |
 | `python/biology_mm/` | Modular Python SDK v1.0.0 (`native.py`, `parameters.py`, `builders.py`, `simulation.py`, `cli.py`) with `pytest` suite & 3 runnable examples |
+| `studio/` | **Biology-MM Studio**: Mol* v6 WebGL2/WebGPU frontend, FastAPI simulation server, 48-byte binary streaming protocol, and Metal 4 multi-million-atom nanotech workbench |
 | `examples/` | 5 runnable Julia end-to-end examples (`01`–`05`, including `05_nanotech_custom_physics.jl`) with numeric gates |
 | `validation/` | NIST LJ data checks, OpenMM/Molly.jl/MDAnalysis adapters, `CAPABILITY_MATRIX.md`, and `STATUS.md` |
 | `FRAMEWORK.md` | Design document: label scheme (PROVED / TARGET / HYPOTHESIS) throughout |
@@ -58,6 +59,22 @@ Runnable SDK examples in `python/examples/`:
 - `01_cnt_nanomechanics.py` — (5,5) armchair CNT construction and NVE workflow
 - `02_custom_physics_law.py` — `ParameterEncoder`, callable-to-cubic-spline potential tabulation, and `md.jl` execution
 - `03_gpu_native_accelerated.py` — Apple Metal 4 `GPUVerletPlan`, GPU-resident batched MD, dual-rail ternary MatVec, and 27-point MSM stencil
+
+---
+
+## Biology-MM Studio (`studio/`)
+
+Biology-MM Studio is an interactive, WebGL2/WebGPU simulation workbench integrating **Mol\* v6** with the **Metal 4 simulation engine**:
+
+- **Real-Time Streaming Protocol**: 48-byte aligned binary headers with contiguous Float32 coordinate streaming directly into Mol* WebGL2 attribute buffers at 60 FPS.
+- **Metal 4 Multi-Million Streaming Tile Kernel**: $32 \times 32$ SIMD threadgroup streaming tile kernel with hardware `atomic_float` accumulation, simulating up to 40,000,000+ real atoms (e.g. Faustovirus 5J7V) in unified GPU memory without CSR neighbor list memory exhaustion.
+- **Full Scientific UI Suite**: Interactive Toolbar, Viewport, Telemetry Drawer (energy, temperature, pressure, virial, RMSD), Physics Builder, and in-browser Python Code Lab for real-time interactive simulation steering.
+
+To start the Studio:
+```sh
+cd studio
+./start_studio.sh
+```
 
 ---
 

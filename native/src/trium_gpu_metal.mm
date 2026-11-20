@@ -207,6 +207,198 @@ inline float3 mic_disp(float dx0, float dy0, float dz0, constant VerletUniforms&
     return float3(dx, dy, dz);
 }
 
+
+inline bool is_pair_excluded(
+    uint a, uint b,
+    device const ulong* excl_keys,
+    uint n_excl
+) {
+    if (n_excl == 0u || excl_keys == nullptr) return false;
+    ulong key = (a < b) ? (((ulong)a << 32) | (ulong)b) : (((ulong)b << 32) | (ulong)a);
+    int low = 0;
+    int high = (int)n_excl - 1;
+    while (low <= high) {
+        int mid = (low + high) >> 1;
+        ulong val = excl_keys[mid];
+        if (val < key) low = mid + 1;
+        else if (val > key) high = mid - 1;
+        else return true;
+    }
+    return false;
+}
+
+inline void eval_pair_force_tile(
+    float4 pos_a, float2 se_a, uint orig_a,
+    float4 pos_b, float2 se_b, uint orig_b,
+    constant VerletUniforms& u,
+    device const float4* dsf_table,
+    device const ulong* excl_keys,
+    uint n_excl,
+    thread float3& force_a,
+    thread float& u_accum
+) {
+    if (orig_a == orig_b) return;
+    if (is_pair_excluded(orig_a, orig_b, excl_keys, n_excl)) return;
+
+    float3 dr0 = pos_a.xyz - pos_b.xyz;
+    float3 dr = mic_disp(dr0.x, dr0.y, dr0.z, u);
+    float r2 = dot(dr, dr);
+    if (r2 >= u.rc2 || r2 < 1e-12f) return;
+
+    float r = sqrt(r2);
+    float inv_r = 1.0f / r;
+    float inv_r2 = inv_r * inv_r;
+    float f_scalar = 0.0f;
+
+    // Lennard-Jones 12-6
+    if (u.do_lj != 0u) {
+        float sigma_ij = se_a.x + se_b.x;
+        float eps_ij = se_a.y * se_b.y;
+        if (eps_ij > 0.0f) {
+            float s2 = sigma_ij * sigma_ij * inv_r2;
+            float s6 = s2 * s2 * s2;
+            float s12 = s6 * s6;
+            f_scalar += 24.0f * eps_ij * (2.0f * s12 - s6) * inv_r2;
+            u_accum += 4.0f * eps_ij * (s12 - s6);
+        }
+    }
+
+    // Damped Shifted Force Coulomb
+    if (u.do_coul != 0u) {
+        float qq = pos_a.w * pos_b.w * u.coulomb_prefactor;
+        if (abs(qq) > 1e-8f) {
+            float z = r2 * u.inv_du;
+            int k = clamp((int)z, 0, 511);
+            float dz = z - (float)k;
+            float4 tab = dsf_table[k];
+            float phi = tab.x + dz * (tab.y + dz * (tab.z + dz * tab.w));
+            float dphi = (tab.y + dz * (2.0f * tab.z + dz * 3.0f * tab.w)) * (2.0f * u.inv_du);
+            f_scalar += -qq * dphi;
+            u_accum += qq * (phi - u.Brc);
+        }
+    }
+
+    force_a += dr * f_scalar;
+}
+
+kernel void lj_dsf_tile_kernel(
+    device const float4*      q_f4         [[buffer(0)]],
+    device const float2*      sig_eps      [[buffer(1)]],
+    device const int2*        tile_pairs   [[buffer(2)]],
+    device const int*         tile_starts  [[buffer(3)]],
+    device const int*         tile_ends    [[buffer(4)]],
+    device const float4*      dsf_table    [[buffer(5)]],
+    constant VerletUniforms&  u            [[buffer(6)]],
+    device atomic_float*      f_atomic     [[buffer(7)]],
+    device atomic_float*      energy_accum [[buffer(8)]],
+    device atomic_float*      vir_accum    [[buffer(9)]],
+    device const int*         m2a          [[buffer(10)]],
+    device const ulong*       excl_keys    [[buffer(11)]],
+    constant uint&            n_excl       [[buffer(12)]],
+    uint                      tp_idx       [[threadgroup_position_in_grid]],
+    uint                      tid          [[thread_index_in_threadgroup]]
+) {
+    int2 tp = tile_pairs[tp_idx];
+    int ti = tp.x;
+    int tj = tp.y;
+
+    int start_i = tile_starts[ti];
+    int end_i   = tile_ends[ti];
+    int count_i = end_i - start_i;
+
+    int start_j = tile_starts[tj];
+    int end_j   = tile_ends[tj];
+    int count_j = end_j - start_j;
+
+    threadgroup float4 sh_pos_i[32];
+    threadgroup float2 sh_se_i[32];
+    threadgroup uint   sh_orig_i[32];
+
+    threadgroup float4 sh_pos_j[32];
+    threadgroup float2 sh_se_j[32];
+    threadgroup uint   sh_orig_j[32];
+
+    if (tid < 32) {
+        if ((int)tid < count_i) {
+            int idx = start_i + tid;
+            sh_pos_i[tid]  = q_f4[idx];
+            sh_se_i[tid]   = sig_eps[idx];
+            sh_orig_i[tid] = (m2a != nullptr) ? (uint)m2a[idx] : (uint)idx;
+        } else {
+            sh_pos_i[tid]  = float4(1e9f);
+            sh_se_i[tid]   = float2(0.0f);
+            sh_orig_i[tid] = 0xFFFFFFFFu;
+        }
+    } else {
+        int lj = (int)tid - 32;
+        if (lj < count_j) {
+            int idx = start_j + lj;
+            sh_pos_j[lj]  = q_f4[idx];
+            sh_se_j[lj]   = sig_eps[idx];
+            sh_orig_j[lj] = (m2a != nullptr) ? (uint)m2a[idx] : (uint)idx;
+        } else {
+            sh_pos_j[lj]  = float4(1e9f);
+            sh_se_j[lj]   = float2(0.0f);
+            sh_orig_j[lj] = 0xFFFFFFFFu;
+        }
+    }
+
+    threadgroup_barrier(mem_flags::mem_threadgroup);
+
+    float3 my_f = float3(0.0f);
+    float my_u = 0.0f;
+
+    if (ti == tj) {
+        if ((int)tid < count_i) {
+            float4 pos_a = sh_pos_i[tid];
+            float2 se_a  = sh_se_i[tid];
+            uint orig_a  = sh_orig_i[tid];
+            for (int k = 0; k < count_i; ++k) {
+                if (k != (int)tid) {
+                    eval_pair_force_tile(pos_a, se_a, orig_a, sh_pos_i[k], sh_se_i[k], sh_orig_i[k], u, dsf_table, excl_keys, n_excl, my_f, my_u);
+                }
+            }
+            int atom_a = start_i + tid;
+            atomic_fetch_add_explicit(&f_atomic[3 * atom_a + 0], my_f.x, memory_order_relaxed);
+            atomic_fetch_add_explicit(&f_atomic[3 * atom_a + 1], my_f.y, memory_order_relaxed);
+            atomic_fetch_add_explicit(&f_atomic[3 * atom_a + 2], my_f.z, memory_order_relaxed);
+        }
+    } else {
+        if (tid < 32) {
+            if ((int)tid < count_i) {
+                float4 pos_a = sh_pos_i[tid];
+                float2 se_a  = sh_se_i[tid];
+                uint orig_a  = sh_orig_i[tid];
+                for (int k = 0; k < count_j; ++k) {
+                    eval_pair_force_tile(pos_a, se_a, orig_a, sh_pos_j[k], sh_se_j[k], sh_orig_j[k], u, dsf_table, excl_keys, n_excl, my_f, my_u);
+                }
+                int atom_a = start_i + tid;
+                atomic_fetch_add_explicit(&f_atomic[3 * atom_a + 0], my_f.x, memory_order_relaxed);
+                atomic_fetch_add_explicit(&f_atomic[3 * atom_a + 1], my_f.y, memory_order_relaxed);
+                atomic_fetch_add_explicit(&f_atomic[3 * atom_a + 2], my_f.z, memory_order_relaxed);
+            }
+        } else {
+            int lj = (int)tid - 32;
+            if (lj < count_j) {
+                float4 pos_b = sh_pos_j[lj];
+                float2 se_b  = sh_se_j[lj];
+                uint orig_b  = sh_orig_j[lj];
+                for (int k = 0; k < count_i; ++k) {
+                    eval_pair_force_tile(pos_b, se_b, orig_b, sh_pos_i[k], sh_se_i[k], sh_orig_i[k], u, dsf_table, excl_keys, n_excl, my_f, my_u);
+                }
+                int atom_b = start_j + lj;
+                atomic_fetch_add_explicit(&f_atomic[3 * atom_b + 0], my_f.x, memory_order_relaxed);
+                atomic_fetch_add_explicit(&f_atomic[3 * atom_b + 1], my_f.y, memory_order_relaxed);
+                atomic_fetch_add_explicit(&f_atomic[3 * atom_b + 2], my_f.z, memory_order_relaxed);
+            }
+        }
+    }
+
+    if (my_u != 0.0f) {
+        atomic_fetch_add_explicit(energy_accum, my_u * 0.5f, memory_order_relaxed);
+    }
+}
+
 constant bool FC_COMPUTE_VIRIAL [[function_constant(0)]];
 
 kernel void lj_dsf_csr_kernel(
@@ -715,6 +907,7 @@ struct MetalContext {
     id<MTLComputePipelineState> pso_reduce = nil;
     id<MTLComputePipelineState> pso_bonded = nil;
     id<MTLComputePipelineState> pso_verlet_kd = nil;
+    id<MTLComputePipelineState> pso_verlet_tile = nil;
     id<MTLBuffer> dummy_buf = nil;
 
     // Reusable shared scratch buffers for matvec & stencil27
@@ -789,6 +982,7 @@ struct MetalContext {
             pso_reduce = make_pso(@"reduce_energy_virial_kernel");
             pso_bonded = make_pso(@"bonded_csr_kernel");
             pso_verlet_kd = make_pso(@"verlet_kick_drift_kernel");
+            pso_verlet_tile = make_pso(@"lj_dsf_tile_kernel");
             dummy_buf = [device newBufferWithLength:64 options:MTLResourceStorageModeShared];
             if (dummy_buf) {
                 std::memset([dummy_buf contents], 0, 64);
@@ -796,7 +990,7 @@ struct MetalContext {
 
             available = (pso_verlet != nil && pso_verlet_novir != nil &&
                          pso_matvec != nil && pso_stencil27 != nil &&
-                         pso_reduce != nil && pso_bonded != nil && pso_verlet_kd != nil &&
+                         pso_reduce != nil && pso_bonded != nil && pso_verlet_kd != nil && pso_verlet_tile != nil &&
                          dummy_buf != nil);
             return available;
         }
@@ -1000,6 +1194,14 @@ struct XbtGpuVerletPlan {
     size_t cached_n_bonds = 0;
     size_t cached_n_angles = 0;
     uint64_t cached_topo_hash = 0;
+    bool use_tile_stream = false;
+    size_t n_tile_pairs = 0;
+    id<MTLBuffer> buf_tile_pairs = nil;
+    id<MTLBuffer> buf_tile_starts = nil;
+    id<MTLBuffer> buf_tile_ends = nil;
+    id<MTLBuffer> buf_m2a = nil;
+    id<MTLBuffer> buf_excl_keys = nil;
+    uint32_t n_gpu_excl = 0;
 
     std::mutex eval_mtx;
 
@@ -1010,6 +1212,11 @@ struct XbtGpuVerletPlan {
                 b = nil;
             }
         };
+        rel(buf_tile_pairs);
+        rel(buf_tile_starts);
+        rel(buf_tile_ends);
+        rel(buf_m2a);
+        rel(buf_excl_keys);
         rel(buf_q_f4);
         rel(buf_sig_eps);
         rel(buf_row_ptr);
@@ -1275,6 +1482,95 @@ XBT_GPU_EXPORT void* xbt_gpu_verlet_plan_create(
     std::vector<uint32_t> row_counts(n_atoms, 0);
     bool any_scaled = false;
 
+    if (n_tile_pairs > 0 && tile_i && tile_j && tile_starts && tile_ends) {
+        plan->use_tile_stream = true;
+        plan->n_tile_pairs = n_tile_pairs;
+        plan->nnz = n_tile_pairs * 32 * 32;
+
+        struct Int2 { int32_t x, y; };
+        std::vector<Int2> pairs_0based(n_tile_pairs);
+        int32_t max_t = 0;
+        for (size_t p = 0; p < n_tile_pairs; ++p) {
+            int32_t ti0 = tile_i[p] - 1;
+            int32_t tj0 = tile_j[p] - 1;
+            pairs_0based[p] = Int2{ti0, tj0};
+            if (tile_i[p] > max_t) max_t = tile_i[p];
+            if (tile_j[p] > max_t) max_t = tile_j[p];
+        }
+        const size_t n_tiles = static_cast<size_t>(max_t);
+        std::vector<int32_t> t_starts_0based(n_tiles);
+        std::vector<int32_t> t_ends_0based(n_tiles);
+        for (size_t t = 0; t < n_tiles; ++t) {
+            t_starts_0based[t] = tile_starts[t] - 1;
+            t_ends_0based[t]   = tile_ends[t];
+        }
+
+        @autoreleasepool {
+            plan->buf_q_f4 = [ctx.device newBufferWithLength:n_atoms * sizeof(Float4) options:MTLResourceStorageModeShared];
+            plan->buf_sig_eps = [ctx.device newBufferWithLength:n_atoms * sizeof(Float2) options:MTLResourceStorageModeShared];
+            plan->buf_f_out = [ctx.device newBufferWithLength:3 * n_atoms * sizeof(float) options:MTLResourceStorageModeShared];
+            plan->buf_u_out = [ctx.device newBufferWithLength:sizeof(float) options:MTLResourceStorageModeShared];
+            plan->buf_vir_out = [ctx.device newBufferWithLength:9 * sizeof(float) options:MTLResourceStorageModeShared];
+            plan->buf_reduce_out = [ctx.device newBufferWithLength:REDUCE_MAX_GROUPS * 10 * sizeof(float) options:MTLResourceStorageModeShared];
+            plan->buf_dsf_table = [ctx.device newBufferWithLength:DSF_N_TAB * sizeof(Float4) options:MTLResourceStorageModeShared];
+
+            plan->buf_tile_pairs = [ctx.device newBufferWithBytes:pairs_0based.data() length:n_tile_pairs * sizeof(Int2) options:MTLResourceStorageModeShared];
+            plan->buf_tile_starts = [ctx.device newBufferWithBytes:t_starts_0based.data() length:n_tiles * sizeof(int32_t) options:MTLResourceStorageModeShared];
+            plan->buf_tile_ends = [ctx.device newBufferWithBytes:t_ends_0based.data() length:n_tiles * sizeof(int32_t) options:MTLResourceStorageModeShared];
+            plan->buf_m2a = [ctx.device newBufferWithBytes:plan->morton_to_atom.data() length:n_atoms * sizeof(int32_t) options:MTLResourceStorageModeShared];
+
+            if (n_excl > 0 && excl_keys != nullptr) {
+                plan->buf_excl_keys = [ctx.device newBufferWithBytes:excl_keys length:n_excl * sizeof(uint64_t) options:MTLResourceStorageModeShared];
+                plan->n_gpu_excl = static_cast<uint32_t>(n_excl);
+            } else {
+                plan->buf_excl_keys = [ctx.device newBufferWithLength:64 options:MTLResourceStorageModeShared];
+                plan->n_gpu_excl = 0;
+            }
+        }
+
+        if (!plan->buf_q_f4 || !plan->buf_sig_eps || !plan->buf_f_out || !plan->buf_u_out ||
+            !plan->buf_tile_pairs || !plan->buf_tile_starts || !plan->buf_tile_ends || !plan->buf_m2a) {
+            return nullptr;
+        }
+
+        std::memcpy([plan->buf_sig_eps contents], sig_eps_host.data(), n_atoms * sizeof(Float2));
+        Float4* q_f4_ptr = static_cast<Float4*>([plan->buf_q_f4 contents]);
+        for (size_t r = 0; r < n_atoms; ++r) {
+            q_f4_ptr[r] = Float4{
+                static_cast<float>(morton_q[3 * r + 0]),
+                static_cast<float>(morton_q[3 * r + 1]),
+                static_cast<float>(morton_q[3 * r + 2]),
+                plan->do_coul ? plan->chg_f[r] : 0.0f
+            };
+        }
+
+        if (plan->do_coul) {
+            Float4* dsf_tab = static_cast<Float4*>([plan->buf_dsf_table contents]);
+            const double alpha = plan->alpha_dsf;
+            const double du = plan->du;
+            const double two_a_sqrtpi = 2.0 * alpha / SQRT_PI;
+            for (int k = 0; k < DSF_N_TAB; ++k) {
+                const double r2_k = (static_cast<double>(k) + 0.5) * du;
+                const double r_k = std::sqrt(r2_k);
+                const double z_k = alpha * r_k;
+                const double erfc_zk = std::erfc(z_k);
+                const double exp_zk = std::exp(-alpha * alpha * r2_k);
+                const double inv_rk = 1.0 / r_k;
+                const double inv_rk2 = inv_rk * inv_rk;
+                const double phi = erfc_zk * inv_rk - plan->Brc + plan->Arc * r_k;
+                const double dphi = -(erfc_zk * inv_rk2 + two_a_sqrtpi * exp_zk * inv_rk) + plan->Arc;
+                dsf_tab[k] = Float4{
+                    static_cast<float>(phi),
+                    static_cast<float>(dphi),
+                    0.0f,
+                    0.0f
+                };
+            }
+        }
+
+        return plan.release();
+    }
+
     if (n_tile_pairs > 0 && tile_i && tile_j && order && tile_starts && tile_ends) {
         const double eff_skin = std::max(skin, 0.02);
         const double r_list = rcut + eff_skin;
@@ -1297,7 +1593,7 @@ XBT_GPU_EXPORT void* xbt_gpu_verlet_plan_create(
         const bool has_scaled = (n_scaled > 0 && scaled_keys != nullptr);
         const bool check_topo = (has_excl || has_scaled);
 
-        accepted.reserve(n_atoms * 64);
+        accepted.reserve(std::min<size_t>(n_atoms * 64, 40000000ULL));
 
         auto test_pair = [&](int32_t a_pos0, int32_t b_pos0, int32_t i1, double qxi, double qyi, double qzi) {
             const int32_t j1 = order[b_pos0];
@@ -1516,7 +1812,7 @@ XBT_GPU_EXPORT double xbt_gpu_verlet_plan_eval(
         std::memset(out_virial9, 0, 9 * sizeof(double));
     }
 
-    if (!q || n_atoms == 0 || plan.nnz == 0) {
+    if (!q || n_atoms == 0 || (plan.nnz == 0 && !plan.use_tile_stream)) {
         return 0.0;
     }
 
@@ -1560,6 +1856,61 @@ XBT_GPU_EXPORT double xbt_gpu_verlet_plan_eval(
     ru.compute_virial = need_vir ? 1u : 0u;
     ru.has_bonded = 0u;
     ru.compute_ke = 0u;
+    if (plan.use_tile_stream) {
+        @autoreleasepool {
+            id<MTLCommandBuffer> cmdBuf = [ctx.queue commandBuffer];
+
+            id<MTLBlitCommandEncoder> blit = [cmdBuf blitCommandEncoder];
+            [blit fillBuffer:plan.buf_f_out range:NSMakeRange(0, 3 * n_atoms * sizeof(float)) value:0];
+            [blit fillBuffer:plan.buf_u_out range:NSMakeRange(0, sizeof(float)) value:0];
+            [blit fillBuffer:plan.buf_vir_out range:NSMakeRange(0, 9 * sizeof(float)) value:0];
+            [blit endEncoding];
+
+            id<MTLComputeCommandEncoder> enc = [cmdBuf computeCommandEncoder];
+            [enc setComputePipelineState:ctx.pso_verlet_tile];
+            [enc setBuffer:plan.buf_q_f4 offset:0 atIndex:0];
+            [enc setBuffer:plan.buf_sig_eps offset:0 atIndex:1];
+            [enc setBuffer:plan.buf_tile_pairs offset:0 atIndex:2];
+            [enc setBuffer:plan.buf_tile_starts offset:0 atIndex:3];
+            [enc setBuffer:plan.buf_tile_ends offset:0 atIndex:4];
+            [enc setBuffer:plan.buf_dsf_table offset:0 atIndex:5];
+            [enc setBytes:&u length:sizeof(VerletUniforms) atIndex:6];
+            [enc setBuffer:plan.buf_f_out offset:0 atIndex:7];
+            [enc setBuffer:plan.buf_u_out offset:0 atIndex:8];
+            [enc setBuffer:plan.buf_vir_out offset:0 atIndex:9];
+            [enc setBuffer:plan.buf_m2a offset:0 atIndex:10];
+            [enc setBuffer:plan.buf_excl_keys offset:0 atIndex:11];
+            uint32_t n_ex = plan.n_gpu_excl;
+            [enc setBytes:&n_ex length:sizeof(uint32_t) atIndex:12];
+
+            [enc dispatchThreadgroups:MTLSizeMake(plan.n_tile_pairs, 1, 1)
+                threadsPerThreadgroup:MTLSizeMake(64, 1, 1)];
+            [enc endEncoding];
+
+            [cmdBuf commit];
+            [cmdBuf waitUntilCompleted];
+        }
+
+        const float* f_out = static_cast<const float*>([plan.buf_f_out contents]);
+        if (out_forces) {
+            if (plan.order_is_perm) {
+                for (size_t r = 0; r < n_atoms; ++r) {
+                    const int32_t orig = plan.morton_to_atom[r];
+                    if (orig >= 0 && static_cast<size_t>(orig) < n_atoms) {
+                        out_forces[3 * orig + 0] = static_cast<double>(f_out[3 * r + 0]);
+                        out_forces[3 * orig + 1] = static_cast<double>(f_out[3 * r + 1]);
+                        out_forces[3 * orig + 2] = static_cast<double>(f_out[3 * r + 2]);
+                    }
+                }
+            } else {
+                for (size_t i = 0; i < 3 * n_atoms; ++i) {
+                    out_forces[i] = static_cast<double>(f_out[i]);
+                }
+            }
+        }
+        const float u_val = *static_cast<const float*>([plan.buf_u_out contents]);
+        return static_cast<double>(u_val);
+    }
 
     @autoreleasepool {
         id<MTLCommandBuffer> cmdBuf = [ctx.queue commandBuffer];
@@ -1875,19 +2226,47 @@ XBT_GPU_EXPORT double xbt_gpu_md_batch_run(
         id<MTLComputeCommandEncoder> enc = [cmdBuf computeCommandEncoder];
 
         auto encode_forces = [&]() {
-            [enc setComputePipelineState:ctx.pso_verlet_novir];
-            [enc setBuffer:plan.buf_q_f4      offset:0 atIndex:0];
-            [enc setBuffer:plan.buf_sig_eps   offset:0 atIndex:1];
-            [enc setBuffer:plan.buf_row_ptr   offset:0 atIndex:2];
-            [enc setBuffer:plan.buf_col_idx   offset:0 atIndex:3];
-            [enc setBuffer:plan.buf_wlj       offset:0 atIndex:4];
-            [enc setBuffer:plan.buf_wcoul     offset:0 atIndex:5];
-            [enc setBuffer:plan.buf_dsf_table offset:0 atIndex:6];
-            [enc setBuffer:plan.buf_f_out     offset:0 atIndex:7];
-            [enc setBuffer:plan.buf_u_out     offset:0 atIndex:8];
-            [enc setBuffer:plan.buf_vir_out   offset:0 atIndex:9];
-            [enc setBytes:&u length:sizeof(VerletUniforms) atIndex:10];
-            [enc dispatchThreads:gridSizeNb threadsPerThreadgroup:tgSizeNb];
+            if (plan.use_tile_stream) {
+                [enc endEncoding];
+                id<MTLBlitCommandEncoder> blit = [cmdBuf blitCommandEncoder];
+                [blit fillBuffer:plan.buf_f_out range:NSMakeRange(0, 3 * n_atoms * sizeof(float)) value:0];
+                [blit fillBuffer:plan.buf_u_out range:NSMakeRange(0, sizeof(float)) value:0];
+                [blit endEncoding];
+                enc = [cmdBuf computeCommandEncoder];
+
+                [enc setComputePipelineState:ctx.pso_verlet_tile];
+                [enc setBuffer:plan.buf_q_f4 offset:0 atIndex:0];
+                [enc setBuffer:plan.buf_sig_eps offset:0 atIndex:1];
+                [enc setBuffer:plan.buf_tile_pairs offset:0 atIndex:2];
+                [enc setBuffer:plan.buf_tile_starts offset:0 atIndex:3];
+                [enc setBuffer:plan.buf_tile_ends offset:0 atIndex:4];
+                [enc setBuffer:plan.buf_dsf_table offset:0 atIndex:5];
+                [enc setBytes:&u length:sizeof(VerletUniforms) atIndex:6];
+                [enc setBuffer:plan.buf_f_out offset:0 atIndex:7];
+                [enc setBuffer:plan.buf_u_out offset:0 atIndex:8];
+                [enc setBuffer:plan.buf_vir_out offset:0 atIndex:9];
+                [enc setBuffer:plan.buf_m2a offset:0 atIndex:10];
+                [enc setBuffer:plan.buf_excl_keys offset:0 atIndex:11];
+                uint32_t n_ex = plan.n_gpu_excl;
+                [enc setBytes:&n_ex length:sizeof(uint32_t) atIndex:12];
+
+                [enc dispatchThreadgroups:MTLSizeMake(plan.n_tile_pairs, 1, 1)
+                    threadsPerThreadgroup:MTLSizeMake(64, 1, 1)];
+            } else {
+                [enc setComputePipelineState:ctx.pso_verlet_novir];
+                [enc setBuffer:plan.buf_q_f4      offset:0 atIndex:0];
+                [enc setBuffer:plan.buf_sig_eps   offset:0 atIndex:1];
+                [enc setBuffer:plan.buf_row_ptr   offset:0 atIndex:2];
+                [enc setBuffer:plan.buf_col_idx   offset:0 atIndex:3];
+                [enc setBuffer:plan.buf_wlj       offset:0 atIndex:4];
+                [enc setBuffer:plan.buf_wcoul     offset:0 atIndex:5];
+                [enc setBuffer:plan.buf_dsf_table offset:0 atIndex:6];
+                [enc setBuffer:plan.buf_f_out     offset:0 atIndex:7];
+                [enc setBuffer:plan.buf_u_out     offset:0 atIndex:8];
+                [enc setBuffer:plan.buf_vir_out   offset:0 atIndex:9];
+                [enc setBytes:&u length:sizeof(VerletUniforms) atIndex:10];
+                [enc dispatchThreads:gridSizeNb threadsPerThreadgroup:tgSizeNb];
+            }
 
             if (has_bonded) {
                 [enc setComputePipelineState:ctx.pso_bonded];

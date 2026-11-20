@@ -1,0 +1,107 @@
+diff --git a/packages/extensions/assembly-symmetry/src/representation.ts b/packages/extensions/assembly-symmetry/src/representation.ts
+index 1e9eb70af..26cc2da26 100644
+--- a/packages/extensions/assembly-symmetry/src/representation.ts
++++ b/packages/extensions/assembly-symmetry/src/representation.ts
+@@ -177,7 +177,10 @@ function getAxesMesh(data: AssemblySymmetryValue, props: PD.Values<AxesParams>,
+ }
+ 
+ function getAxesShape(ctx: RuntimeContext, data: Structure, props: AssemblySymmetryProps, shape?: Shape<Mesh>) {
+-  const assemblySymmetry = AssemblySymmetryProvider.get(data).value!;
++  const assemblySymmetry = AssemblySymmetryProvider.get(data)?.value;
++  if (!assemblySymmetry || !assemblySymmetry.rotation_axes) {
++    return ShapeUtils.create('Axes', data, Mesh.createEmpty(shape && shape.geometry), () => Color(0), () => 1, () => '');
++  }
+   const geo = getAxesMesh(assemblySymmetry, props, shape && shape.geometry);
+   const getColor = (groupId: number) => {
+     if (props.axesColor.name === 'byOrder') {
+@@ -388,7 +391,10 @@ function getCageMesh(data: Structure, props: PD.Values<CageParams>, mesh?: Mesh)
+ }
+ 
+ function getCageShape(ctx: RuntimeContext, data: Structure, props: AssemblySymmetryProps, shape?: Shape<Mesh>) {
+-  const assemblySymmetry = AssemblySymmetryProvider.get(data).value!;
++  const assemblySymmetry = AssemblySymmetryProvider.get(data)?.value;
++  if (!assemblySymmetry) {
++    return ShapeUtils.create('Cage', data, Mesh.createEmpty(shape && shape.geometry), () => Color(0), () => 1, () => '');
++  }
+   const geo = getCageMesh(data, props, shape && shape.geometry);
+   const getColor = (groupId: number) => {
+     return props.cageColor;
+diff --git a/packages/extensions/assembly-symmetry/src/transforms.ts b/packages/extensions/assembly-symmetry/src/transforms.ts
+index f1dfcbd9f..8864c2d6c 100644
+--- a/packages/extensions/assembly-symmetry/src/transforms.ts
++++ b/packages/extensions/assembly-symmetry/src/transforms.ts
+@@ -79,7 +79,7 @@ const AssemblySymmetry3D = PluginStateTransform.BuiltIn({
+         { runtime: ctx, assetManager: plugin.managers.asset, errorContext: plugin.errorContext },
+         a.data,
+       );
+-      const assemblySymmetry = AssemblySymmetryProvider.get(a.data).value;
++      const assemblySymmetry = AssemblySymmetryProvider.get(a.data)?.value;
+       if (!assemblySymmetry || assemblySymmetry.symbol === 'C1') {
+         return StateObject.Null;
+       }
+@@ -101,7 +101,7 @@ const AssemblySymmetry3D = PluginStateTransform.BuiltIn({
+         { runtime: ctx, assetManager: plugin.managers.asset, errorContext: plugin.errorContext },
+         a.data,
+       );
+-      const assemblySymmetry = AssemblySymmetryProvider.get(a.data).value;
++      const assemblySymmetry = AssemblySymmetryProvider.get(a.data)?.value;
+       if (!assemblySymmetry || assemblySymmetry.symbol === 'C1') {
+         // this should NOT be StateTransformer.UpdateResult.Null
+         // because that keeps the old object
+@@ -182,7 +182,7 @@ export function tryCreateAssemblySymmetry(
+     .build()
+     .to(structure)
+     .applyOrUpdateTagged(AssemblySymmetryData.Tag.Representation, AssemblySymmetry3D, params, { state: initialState });
+-  return assemblySymmetry.commit({ revertOnError: true });
++  return assemblySymmetry.commit({ revertOnError: false });
+ }
+ 
+ //
+diff --git a/packages/plugin/core/src/config.ts b/packages/plugin/core/src/config.ts
+index f72a74990..190f2ad7b 100644
+--- a/packages/plugin/core/src/config.ts
++++ b/packages/plugin/core/src/config.ts
+@@ -79,7 +79,7 @@ export const PluginConfig = {
+ 
+   VolumeStreaming: {
+     Enabled: item('volume-streaming.enabled', true),
+-    DefaultServer: item('volume-streaming.server', 'https://ds.litemol.org'),
++    DefaultServer: item('volume-streaming.server', 'https://www.ebi.ac.uk/pdbe/densities'),
+     CanStream: item('volume-streaming.can-stream', (s: Structure, plugin: PluginContext) => {
+       return s.models.length === 1 && Model.probablyHasDensityMap(s.models[0]);
+     }),
+diff --git a/packages/plugin/core/src/state/actions/structure.ts b/packages/plugin/core/src/state/actions/structure.ts
+index 6a815b8b7..6b37aba90 100644
+--- a/packages/plugin/core/src/state/actions/structure.ts
++++ b/packages/plugin/core/src/state/actions/structure.ts
+@@ -38,7 +38,7 @@ const DownloadModelRepresentationOptions = (plugin: PluginContext) => {
+   const representationDefault = plugin.config.get(PluginConfig.Structure.DefaultRepresentationPreset) ?? '';
+   return PD.Group(
+     {
+-      type: RootStructureDefinition.getParams(void 0, 'auto', plugin).type,
++      type: RootStructureDefinition.getParams(void 0, 'assembly', plugin).type,
+       representation: PD.Select(
+         representationDefault,
+         plugin.builders.structure.representation
+@@ -319,7 +319,7 @@ const DownloadStructure = StateAction.build({
+     const showUnitcell = representationPreset !== EmptyRepresentationPresetId;
+     const hierarchyPreset = plugin.config.get(PluginConfig.Structure.DefaultHierarchyPreset) ?? '';
+ 
+-    const structure = src.params.options.type.name === 'auto' ? void 0 : src.params.options.type;
++    const structure = src.params.options.type;
+     await state
+       .transaction(async () => {
+         if (downloadParams.length > 0 && asTrajectory) {
+diff --git a/packages/plugin/core/src/state/helpers/root-structure.ts b/packages/plugin/core/src/state/helpers/root-structure.ts
+index 9c177e9ce..3d13baff1 100644
+--- a/packages/plugin/core/src/state/helpers/root-structure.ts
++++ b/packages/plugin/core/src/state/helpers/root-structure.ts
+@@ -163,7 +163,7 @@ export namespace RootStructureDefinition {
+ 
+     options.push(['model', 'Model']);
+ 
+-    if (assemblyIds.length > 0) {
++    if (!model || assemblyIds.length > 0) {
+       options.push(['assembly', 'Assembly']);
+     }
+ 

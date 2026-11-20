@@ -49,3 +49,11 @@ julia/lib/shaders/
 python/*.egg-info/
 python/build/
 python/dist/
+
+# Studio build, dependency, and virtualenv artifacts
+studio/**/node_modules/
+studio/**/dist/
+studio/**/.venv/
+studio/**/lib/
+studio/**/*.tsbuildinfo
+
