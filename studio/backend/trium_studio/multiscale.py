@@ -43,6 +43,7 @@ _Z_TO_ELEMENT: Dict[int, str] = {
     20: "Ca",
     26: "Fe",
     30: "Zn",
+    34: "Se",
     35: "Br",
     53: "I",
 }
@@ -308,6 +309,26 @@ def _find_neighbor_pairs_mic(
         return empty_i, empty_i, np.zeros((0, 3), dtype=np.float64), np.zeros(0, dtype=np.float64)
 
     inv_L = 1.0 / np.maximum(box_L, 1e-9)
+    if n > 128:
+        try:
+            from scipy.spatial import cKDTree
+
+            pts_w = np.mod(positions_nm, box_L[None, :])
+            pts_w = np.where((pts_w >= box_L[None, :]) | (pts_w < 0.0), 0.0, pts_w)
+            tree = cKDTree(pts_w, boxsize=box_L)
+            pairs = tree.query_pairs(r=float(rcut), output_type="ndarray")
+            if pairs.size == 0:
+                empty_i = np.zeros(0, dtype=np.int32)
+                return empty_i, empty_i, np.zeros((0, 3), dtype=np.float64), np.zeros(0, dtype=np.float64)
+            ii = pairs[:, 0].astype(np.int32, copy=False)
+            jj = pairs[:, 1].astype(np.int32, copy=False)
+            d_sel = positions_nm[ii] - positions_nm[jj]
+            d_sel -= box_L[None, :] * np.rint(d_sel * inv_L[None, :])
+            r_sel = np.sqrt(np.maximum(np.sum(d_sel * d_sel, axis=1), 0.0))
+            return ii, jj, d_sel, r_sel
+        except Exception:
+            pass
+
     nx = int(math.floor(float(box_L[0]) / max(rcut, 1e-6)))
     ny = int(math.floor(float(box_L[1]) / max(rcut, 1e-6)))
     nz = int(math.floor(float(box_L[2]) / max(rcut, 1e-6)))
@@ -459,8 +480,10 @@ def _eval_softcore_lj(
 
     total_energy = float(np.sum(u_sc + u_core))
     f_ij = d_ij * (coeff_sc + coeff_core)[:, None]
-    np.add.at(forces, ii, f_ij)
-    np.add.at(forces, jj, -f_ij)
+    for dim in range(3):
+        forces[:, dim] = np.bincount(ii, weights=f_ij[:, dim], minlength=n) - np.bincount(
+            jj, weights=f_ij[:, dim], minlength=n
+        )
     return total_energy, forces, n_clashes
 
 
@@ -607,6 +630,9 @@ class MultiscaleZonePartition:
             "n_all_atom": int(self.n_all_atom),
             "n_coarse_grained": int(self.n_coarse_grained),
             "n_rigid_scaffold": int(self.n_rigid_scaffold),
+            "all_atom": int(self.n_all_atom),
+            "coarse_grained": int(self.n_coarse_grained),
+            "rigid_scaffold": int(self.n_rigid_scaffold),
             "n_total": int(self.n_all_atom + self.n_coarse_grained + self.n_rigid_scaffold),
             "estimated_memory_mb": round(float(self.estimated_memory_mb), 4),
         }

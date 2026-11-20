@@ -8,7 +8,7 @@ import {
   type StudioColorMode,
   type StudioOverlaysState,
 } from '../studio-store.js';
-import type { PaletteName, SimulationMode } from '../types.js';
+import type { PaletteName, SimulationMode, StorageMode } from '../types.js';
 
 type EngineTabId = 'prep' | 'scale' | 'run' | 'lab';
 
@@ -63,6 +63,27 @@ const SIM_MODES: ReadonlyArray<{ value: SimulationMode; label: string }> = [
   { value: 'custom_spline', label: 'Custom Pair Potential' },
   { value: 'nanopore_gcmc_nemd', label: 'Nanopore GCMC + NEMD' },
 ];
+
+const STORAGE_MODES: ReadonlyArray<{ value: StorageMode; label: string }> = [
+  { value: 'auto', label: 'Auto (Ultra-Light <1 GB)' },
+  { value: 'symmetry-compact', label: 'Symmetry-Compact' },
+  { value: 'full', label: 'Full All-Atom' },
+];
+
+function formatCompactRamMb(ramMb: number): string {
+  if (ramMb >= 1024) return `${(ramMb / 1024).toFixed(1)} GB`;
+  if (ramMb >= 10) return `${Math.round(ramMb)} MB`;
+  return `${ramMb.toFixed(1)} MB`;
+}
+
+function formatCompactStorageBadge(mode: string | undefined): string | null {
+  if (!mode) return null;
+  const norm = mode.toLowerCase();
+  if (norm === 'symmetry-compact') return 'SYM-COMPACT';
+  if (norm === 'ternary-compact') return 'TERNARY';
+  if (norm === 'full' || norm === 'float64') return 'FLOAT64';
+  return mode.toUpperCase();
+}
 
 export class BiologyMmEngineControls extends CollapsableControls<CollapsableProps, EngineControlsState> {
   private unsubStore: (() => void) | undefined;
@@ -237,9 +258,30 @@ export class BiologyMmEngineControls extends CollapsableControls<CollapsableProp
           }
         />
 
+        <ControlRow
+          label="Memory"
+          control={
+            <select
+              className="msp-form-control"
+              aria-label="Memory Storage Mode"
+              value={snap.storageMode}
+              onChange={(e: ChangeEvent<HTMLSelectElement>) =>
+                store.setStorageMode(e.target.value as StorageMode)
+              }
+            >
+              {STORAGE_MODES.map((m) => (
+                <option key={m.value} value={m.value}>
+                  {m.label}
+                </option>
+              ))}
+            </select>
+          }
+        />
+
         <div className="bmm-action-stack">
           <Button
             commit="on"
+            className="bmm-msp-primary-btn"
             onClick={() =>
               void store.simulateActiveMolstarStructure({
                 mode: this.state.importMode,
@@ -247,7 +289,7 @@ export class BiologyMmEngineControls extends CollapsableControls<CollapsableProp
               })
             }
             disabled={snap.isBusy}
-            title="Extract the currently loaded PDB/mmCIF structure from Mol* (auto symmetry-native for >100k capsid assemblies) and simulate live"
+            title="Extract the currently loaded PDB/mmCIF structure from Mol* (auto symmetry-native for >25k multi-subunit assemblies) and simulate live"
           >
             Simulate Active Mol* Structure
           </Button>
@@ -276,6 +318,7 @@ export class BiologyMmEngineControls extends CollapsableControls<CollapsableProp
           </label>
 
           <Button
+            className="bmm-msp-relax-btn"
             onClick={() => void store.relaxClashes()}
             disabled={!snap.sessionId || snap.isBusy || snap.isRelaxing}
             title="Run soft-core steepest-descent relaxation to resolve steric clashes before MD integration"
@@ -294,12 +337,24 @@ export class BiologyMmEngineControls extends CollapsableControls<CollapsableProp
 
   private renderScaleTab(store: BiologyMmStudioStore) {
     const snap = store.getSnapshot();
-    const ms = snap.multiscale ?? snap.metrics?.multiscale;
-    const counts = ms?.counts ?? {
-      all_atom: snap.frameStats.nAtoms,
-      coarse_grained: 0,
-      rigid_scaffold: 0,
-    };
+    const m = snap.metrics;
+    const ms = m?.multiscale ?? snap.multiscale;
+    const isCompact = m?.storage_mode === 'symmetry-compact' || m?.storage_mode === 'ternary-compact';
+    const totalN = m?.n_atoms ?? snap.frameStats.nAtoms;
+    const counts =
+      ms?.counts && ms.counts.all_atom + ms.counts.coarse_grained + ms.counts.rigid_scaffold > 0
+        ? ms.counts
+        : isCompact && m?.active_all_atom_count !== undefined
+          ? {
+              all_atom: m.active_all_atom_count,
+              coarse_grained: 0,
+              rigid_scaffold: Math.max(0, totalN - m.active_all_atom_count),
+            }
+          : {
+              all_atom: totalN,
+              coarse_grained: 0,
+              rigid_scaffold: 0,
+            };
 
     return (
       <div className="bmm-tab-body">
@@ -386,6 +441,7 @@ export class BiologyMmEngineControls extends CollapsableControls<CollapsableProp
         <div className="bmm-action-stack">
           <Button
             commit="on"
+            className="bmm-msp-primary-btn"
             disabled={!snap.sessionId || snap.isBusy}
             onClick={() => {
               const cx = Number(this.state.focusCenterX) || 0;
@@ -398,18 +454,30 @@ export class BiologyMmEngineControls extends CollapsableControls<CollapsableProp
           >
             Apply Focus Zone
           </Button>
+          <Button
+            className="bmm-msp-relax-btn"
+            disabled={!snap.sessionId || snap.isBusy}
+            onClick={() => {
+              const aaR = Math.max(1, Number(this.state.aaRadiusInput) || 15);
+              const cgR = Math.max(aaR, Number(this.state.cgRadiusInput) || 30);
+              void store.focusZoneAtCameraTarget(aaR, cgR);
+            }}
+            title="Move the live All-Atom multiscale simulation zone to the current Mol* 3D camera target"
+          >
+            Focus at Camera Target
+          </Button>
         </div>
 
         <div className="bmm-ms-counts">
-          <div className="bmm-ms-chip is-aa">
+          <div className="bmm-ms-chip is-aa" title={`All-Atom: ${counts.all_atom.toLocaleString()}`}>
             <span>All-Atom</span>
             <strong>{counts.all_atom.toLocaleString()}</strong>
           </div>
-          <div className="bmm-ms-chip is-cg">
+          <div className="bmm-ms-chip is-cg" title={`Coarse-Grained: ${counts.coarse_grained.toLocaleString()}`}>
             <span>CG Buffer</span>
             <strong>{counts.coarse_grained.toLocaleString()}</strong>
           </div>
-          <div className="bmm-ms-chip is-rigid">
+          <div className="bmm-ms-chip is-rigid" title={`Rigid Scaffold: ${counts.rigid_scaffold.toLocaleString()}`}>
             <span>Rigid</span>
             <strong>{counts.rigid_scaffold.toLocaleString()}</strong>
           </div>
@@ -635,11 +703,16 @@ export class BiologyMmEngineControls extends CollapsableControls<CollapsableProp
                 inline
                 onClick={() => void store.exportMvsx()}
                 disabled={!snap.sessionId || snap.isBusy}
+                title="Export current session snapshot as .mvsx"
               >
-                Export .mvsx
+                Export
               </Button>
-              <Button inline onClick={() => store.resetCamera()}>
-                Reset Cam
+              <Button
+                inline
+                onClick={() => store.resetCamera()}
+                title="Reset 3D camera view"
+              >
+                Reset
               </Button>
             </div>
           }
@@ -731,6 +804,10 @@ export class BiologyMmEngineControls extends CollapsableControls<CollapsableProp
 
     const hardwareBackend = snap.capabilities?.hardware?.backend ?? snap.metrics?.backend ?? 'CPU';
     const currentStep = snap.metrics?.step ?? 0;
+    const ramMb = snap.metrics?.ram_mb;
+    const hasRam = ramMb !== undefined && Number.isFinite(ramMb);
+    const ramSeverity = hasRam ? (ramMb < 4096 ? 'is-ok' : ramMb <= 12288 ? 'is-warn' : 'is-high') : 'is-ok';
+    const storageBadge = formatCompactStorageBadge(snap.metrics?.storage_mode);
 
     return (
       <div className="bmm-msp-panel">
@@ -742,6 +819,15 @@ export class BiologyMmEngineControls extends CollapsableControls<CollapsableProp
           <span className="bmm-msp-stat">{snap.frameStats.nAtoms.toLocaleString()} atoms</span>
           <span className="bmm-msp-stat">step {currentStep}</span>
           <span className="bmm-msp-stat">{snap.frameStats.simTimePs.toFixed(3)} ps</span>
+          {hasRam && (
+            <span
+              className={`bmm-msp-ram-pill ${ramSeverity}`}
+              title={`Engine RAM: ${formatCompactRamMb(ramMb)}${storageBadge ? ` (${storageBadge})` : ''}`}
+            >
+              <span>{formatCompactRamMb(ramMb)}</span>
+              {storageBadge && <span className="bmm-msp-mode-tag">{storageBadge}</span>}
+            </span>
+          )}
         </div>
 
         {snap.error && (

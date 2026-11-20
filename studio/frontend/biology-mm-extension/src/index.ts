@@ -29,7 +29,7 @@ export { GcmcSlotPool, defaultRadiusForAtomicNumber } from './gcmc-slot-pool.js'
 export type { GcmcDeltaOptions, GcmcDeltaResult } from './gcmc-slot-pool.js';
 
 export { GpuParticleStreamUpdater } from './gpu-buffer-updater.js';
-export type { ScalarRange } from './gpu-buffer-updater.js';
+export type { DirtyIndexRange, ScalarRange } from './gpu-buffer-updater.js';
 
 export {
   BiologyMmLiveBehavior,

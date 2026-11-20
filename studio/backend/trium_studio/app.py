@@ -32,13 +32,19 @@ except ImportError:
     _HAS_MVS_EXPORTER = False
 
 from .multiscale import expand_symmetry_assembly, unpack_tsym_binary
+from .ternary_compact import CompactSymmetryMultiscaleSession
 from .presets import PRESET_DEFINITIONS, create_preset_session, get_preset, list_presets
 from .sandbox import execute_user_code
 from .structure_loader import load_structure_from_bytes
 from .ws_manager import PALETTE_NAMES, ManagedSession, SessionManager
 
 STUDIO_VERSION = "1.0.0"
-DEFAULT_DIST_DIR = Path(__file__).resolve().parents[2] / "molstar" / "apps" / "biology-mm-studio" / "dist"
+_DIST_CANDIDATES = [
+    Path(__file__).resolve().parents[2] / "molstar" / "apps" / "biology-mm-studio" / "dist",
+    Path(__file__).resolve().parents[1] / "frontend" / "biology-mm-studio" / "dist",
+    Path("/Users/mohana/Desktop/Biology-MM-Studio/molstar/apps/biology-mm-studio/dist"),
+]
+DEFAULT_DIST_DIR = next((p for p in _DIST_CANDIDATES if (p / "index.html").is_file()), _DIST_CANDIDATES[0])
 
 
 class CreateSessionRequest(BaseModel):
@@ -139,6 +145,7 @@ _ELEMENT_MASSES: Dict[str, float] = {
     "CA": 40.078,
     "FE": 55.845,
     "ZN": 65.38,
+    "SE": 78.971,
     "BR": 79.904,
     "I": 126.90,
 }
@@ -260,6 +267,13 @@ def create_app(dist_dir: Optional[Path] = None) -> FastAPI:
     @application.get("/api/capabilities")
     async def capabilities() -> Dict[str, Any]:
         hw = probe_hardware()
+        total_ram_mb = 0.0
+        with manager._lock:
+            for rec in manager._sessions.values():
+                try:
+                    total_ram_mb += float(rec.session.get_metrics().get("ram_mb", 0.0))
+                except Exception:
+                    pass
         return {
             "studio_version": STUDIO_VERSION,
             "hardware": asdict(hw),
@@ -268,6 +282,10 @@ def create_app(dist_dir: Optional[Path] = None) -> FastAPI:
             "presets_count": len(PRESET_DEFINITIONS),
             "max_interactive_atoms": 262_144,
             "supports_mvsx": _HAS_MVS_EXPORTER,
+            "supports_symmetry_compact": True,
+            "supports_base243_ternary": True,
+            "storage_mode": "symmetry-compact",
+            "ram_mb": round(total_ram_mb, 4),
         }
 
     @application.get("/api/presets")
@@ -392,17 +410,53 @@ def create_app(dist_dir: Optional[Path] = None) -> FastAPI:
         }
 
     @application.post("/api/sessions/create-from-symmetry")
-    async def create_session_from_symmetry(request: Request) -> Dict[str, Any]:
+    async def create_session_from_symmetry(
+        request: Request,
+        storage_mode: str = Query("auto"),
+    ) -> Dict[str, Any]:
         """
-        Ingest a compact 4-byte-aligned `TSYM` biological symmetry assembly packet,
-        expand the asymmetric unit across all 4x4 affine transforms in vectorized NumPy,
-        relax steric clashes with Beutler soft-core LJ, and register a live session.
+        Ingest a compact 4-byte-aligned `TSYM` biological symmetry assembly packet.
+        For large assemblies (> 50,000 atoms in `auto` mode, or explicit `symmetry-compact`),
+        instantiates `CompactSymmetryMultiscaleSession` directly WITHOUT expanding 40M+
+        float64 arrays in RAM.
         """
+        mode_sel = str(storage_mode or "auto").strip().lower()
+        if mode_sel not in ("auto", "symmetry-compact", "full"):
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid storage_mode '{storage_mode}'; expected 'auto', 'symmetry-compact', or 'full'",
+            )
+
         body = await request.body()
         try:
             sym = unpack_tsym_binary(body)
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+        n_total = int(sym.n_asu_atoms) * int(sym.n_transforms)
+        if n_total == 0:
+            raise HTTPException(status_code=400, detail="Symmetry assembly contains 0 atoms")
+
+        if mode_sel == "symmetry-compact" or (mode_sel == "auto" and n_total > 50_000):
+            sim_compact = CompactSymmetryMultiscaleSession.from_tsym_payload(sym)
+            relaxation = sim_compact.relax_clashes()
+            record = manager.register_session(
+                sim_compact,
+                default_channel="force-magnitude",
+                default_palette="plasma",
+            )
+            metrics = sim_compact.get_metrics()
+            metrics["session_id"] = record.session_id
+            return {
+                "session_id": record.session_id,
+                "title": sym.title,
+                "n_asu_atoms": sym.n_asu_atoms,
+                "n_transforms": sym.n_transforms,
+                "n_atoms": n_total,
+                "storage_mode": metrics["storage_mode"],
+                "relaxation": relaxation,
+                "metrics": metrics,
+            }
 
         expanded_coords_ang, expanded_elements = expand_symmetry_assembly(
             sym.asu_coords_ang,

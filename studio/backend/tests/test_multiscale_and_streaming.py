@@ -433,5 +433,72 @@ class TestFastAPIMultiscaleEndpoints(unittest.TestCase):
             self.assertEqual(resp_mvsj.status_code, 501)
 
 
+    def test_compact_symmetry_world_space_streaming_and_elements(self) -> None:
+        """Verify TSYM -> CompactSymmetryMultiscaleSession preserves protein elements & world-space Float32 coords."""
+        from trium_studio.protocol import FLAG_INT16_FRACTIONAL, FLAG_PBC_WRAPPED
+        from trium_studio.ternary_compact import CompactSymmetryMultiscaleSession
+
+        asu_coords = np.array(
+            [
+                [0.0, 0.0, 0.0],
+                [3.6, 0.0, 0.0],
+                [0.0, 3.6, 0.0],
+                [3.6, 3.6, 0.0],
+                [0.0, 0.0, 3.6],
+                [3.6, 3.6, 3.6],
+            ],
+            dtype=np.float32,
+        )
+        asu_elements = ["C", "N", "O", "S", "H", "P"]
+        transforms = np.stack(
+            [
+                _rotation_z_4x4(0.0, 500.0, 200.0, -300.0),
+                _rotation_z_4x4(0.5 * math.pi, 560.0, 200.0, -300.0),
+                _rotation_z_4x4(math.pi, 700.0, 200.0, -300.0),
+            ],
+            axis=0,
+        )
+        pkt = pack_tsym_binary(
+            asu_coords_ang=asu_coords,
+            transforms_4x4=transforms,
+            asu_elements=asu_elements,
+            title="ProteinCapsidTest",
+            mode="metal_verlet",
+            temperature=300.0,
+            dt=0.002,
+        )
+        sym = unpack_tsym_binary(pkt)
+        self.assertEqual(sym.asu_elements, asu_elements)
+
+        sim = CompactSymmetryMultiscaleSession.from_tsym_payload(
+            sym, aa_radius_ang=25.0, cg_radius_ang=75.0
+        )
+        try:
+            # Verify no Argon anywhere and exact elements in Zone 0 / 'CG' in Zone 1
+            self.assertNotIn(18, set(sim.atomic_numbers.tolist()))
+            z0_elems = [sim.inspect_atom(i)["element"] for i in range(sim.active_all_atom_count)]
+            self.assertEqual(set(z0_elems), set(asu_elements))
+            if sim.active_cg_bead_count > 0:
+                self.assertEqual(sim.inspect_atom(sim.active_all_atom_count)["element"], "CG")
+
+            # Verify exact world-space coordinates around (500, 200, -300) A (never wrapped to [0, L])
+            sim._dirty_tracker.reset()
+            dec = unpack_frame(sim.encode_frame_packet())
+            self.assertEqual(dec["header"].flags & FLAG_INT16_FRACTIONAL, 0)
+            self.assertEqual(dec["header"].flags & FLAG_PBC_WRAPPED, 0)
+            ctr_stream = np.mean(dec["coords"][: sim.active_all_atom_count], axis=0)
+            self.assertGreater(float(ctr_stream[0]), 490.0)
+            self.assertLess(float(ctr_stream[2]), -290.0)
+
+            # Verify 3-zone metrics sum to n_atoms
+            m = sim.get_metrics()
+            ms = m["multiscale"]
+            self.assertEqual(ms["all_atom"] + ms["coarse_grained"] + ms["rigid_scaffold"], 18)
+            self.assertGreater(ms["all_atom"], 0)
+            self.assertGreater(ms["coarse_grained"], 0)
+            self.assertGreater(ms["rigid_scaffold"], 0)
+        finally:
+            sim.close()
+
 if __name__ == "__main__":
     unittest.main()

@@ -253,6 +253,7 @@ def pack_frame_tile_patch(
     use_int16: bool = True,
     scalar_channel: int = 0,
     tile_id: int = 0,
+    pbc_wrapped: bool = True,
 ) -> bytes:
     """
     Pack a sparse ROI / Morton tile patch updating `K` specific atom slots in place:
@@ -266,7 +267,7 @@ def pack_frame_tile_patch(
     pts = np.ascontiguousarray(coords, dtype=np.float32).reshape((k, 3))
     H = _ensure_box_3x3(box_H)
 
-    flags = FLAG_HAS_BOX | FLAG_PBC_WRAPPED
+    flags = FLAG_HAS_BOX | (FLAG_PBC_WRAPPED if pbc_wrapped else 0)
     parts = [H.tobytes(order="C"), idx.tobytes()]
     if use_int16:
         flags |= FLAG_INT16_FRACTIONAL
@@ -304,6 +305,7 @@ def pack_dirty_tile_delta(
     n_dirty_tiles: int = 0,
     use_int16: bool = True,
     scalar_channel: int = 0,
+    pbc_wrapped: bool = True,
 ) -> bytes:
     """
     Pack a multi-tile sparse delta patch for active displaced atoms.
@@ -344,6 +346,7 @@ def pack_dirty_tile_delta(
         use_int16=use_int16,
         scalar_channel=scalar_channel,
         tile_id=int(n_dirty_tiles),
+        pbc_wrapped=pbc_wrapped,
     )
 
 

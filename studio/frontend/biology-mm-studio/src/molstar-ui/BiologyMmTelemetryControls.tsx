@@ -3,6 +3,8 @@ import { Button } from '@molstar/plugin-ui/controls/common';
 import { getOrCreateBiologyMmStudioStore, type BiologyMmStudioStore } from '../studio-store.js';
 import type { PhysicsHealthStatus, SimulationMetrics } from '../types.js';
 
+const RAM_BUDGET_MB = 24 * 1024; // 24 GB Mac unified memory budget
+
 function buildSparklinePoints(values: number[], width: number, height: number): string {
   if (values.length === 0) return '';
   if (values.length === 1) {
@@ -62,6 +64,41 @@ function formatBytes(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
 }
 
+function formatCompactCount(n: number): string {
+  if (!Number.isFinite(n) || n < 0) return '0';
+  if (n >= 1_000_000) {
+    const val = n / 1_000_000;
+    return `${val >= 100 ? val.toFixed(0) : val >= 10 ? val.toFixed(1) : val.toFixed(2)}M`;
+  }
+  if (n >= 10_000) {
+    const val = n / 1_000;
+    return `${val >= 100 ? val.toFixed(0) : val.toFixed(1)}k`;
+  }
+  return Math.round(n).toLocaleString();
+}
+
+function formatRamMb(ramMb: number): string {
+  if (!Number.isFinite(ramMb) || ramMb < 0) return '—';
+  if (ramMb >= 1024) return `${(ramMb / 1024).toFixed(2)} GB`;
+  if (ramMb >= 10) return `${Math.round(ramMb)} MB`;
+  return `${ramMb.toFixed(1)} MB`;
+}
+
+function formatStorageModeBadge(mode: string | undefined): string {
+  if (!mode) return 'FLOAT64';
+  const norm = mode.toLowerCase();
+  if (norm === 'symmetry-compact') return 'SYM-COMPACT';
+  if (norm === 'ternary-compact') return 'TERNARY-COMPACT';
+  if (norm === 'full' || norm === 'float64') return 'FLOAT64';
+  return mode.toUpperCase();
+}
+
+function getRamSeverityClass(ramMb: number): 'is-ok' | 'is-warn' | 'is-high' {
+  if (ramMb < 4096) return 'is-ok';
+  if (ramMb <= 12288) return 'is-warn';
+  return 'is-high';
+}
+
 export class BiologyMmTelemetryControls extends CollapsableControls<CollapsableProps, CollapsableState> {
   private unsubStore: (() => void) | undefined;
 
@@ -69,7 +106,7 @@ export class BiologyMmTelemetryControls extends CollapsableControls<CollapsableP
     return {
       isCollapsed: false,
       header: 'Biology-MM Telemetry',
-      description: 'Health · Scale · Atom',
+      description: 'Health · RAM · Scale · Atom',
     };
   }
 
@@ -100,18 +137,51 @@ export class BiologyMmTelemetryControls extends CollapsableControls<CollapsableP
     const temps = snap.metricHistory.map((h) => h.temperature_K);
 
     const health = resolveHealthStatus(m);
-    const ms = snap.multiscale ?? m?.multiscale;
-    const aaCount = ms?.counts?.all_atom ?? (m?.n_atoms ?? snap.frameStats.nAtoms);
-    const cgCount = ms?.counts?.coarse_grained ?? 0;
-    const rigidCount = ms?.counts?.rigid_scaffold ?? 0;
+    const isCompactMode =
+      m?.storage_mode === 'symmetry-compact' || m?.storage_mode === 'ternary-compact';
+
+    const ms = m?.multiscale ?? snap.multiscale;
+    const msCounts = ms?.counts;
+    const hasMsCounts =
+      msCounts !== undefined &&
+      msCounts.all_atom + msCounts.coarse_grained + msCounts.rigid_scaffold > 0;
+
+    const sessionTotalAtoms = m?.n_atoms ?? snap.frameStats.nAtoms;
+    const aaCount = hasMsCounts
+      ? msCounts.all_atom
+      : isCompactMode && m?.active_all_atom_count !== undefined
+        ? m.active_all_atom_count
+        : sessionTotalAtoms;
+    const cgCount = hasMsCounts ? msCounts.coarse_grained : 0;
+    const rigidCount = hasMsCounts
+      ? msCounts.rigid_scaffold
+      : isCompactMode && m?.active_all_atom_count !== undefined
+        ? Math.max(0, sessionTotalAtoms - m.active_all_atom_count)
+        : 0;
     const totalScaleCount = Math.max(1, aaCount + cgCount + rigidCount);
     const aaPct = (aaCount / totalScaleCount) * 100;
     const cgPct = (cgCount / totalScaleCount) * 100;
     const rigidPct = Math.max(0, 100 - aaPct - cgPct);
 
     const dirtyAtoms = m?.delta_stats?.dirty_atoms ?? snap.frameStats.lastDirtyAtomCount;
-    const totalAtoms = m?.delta_stats?.total_atoms ?? snap.frameStats.nAtoms;
+    const totalAtoms = m?.delta_stats?.total_atoms ?? sessionTotalAtoms;
     const packetBytes = m?.delta_stats?.packet_bytes ?? snap.frameStats.lastPacketBytes;
+
+    const hasRamMetrics =
+      (m?.ram_mb !== undefined && Number.isFinite(m.ram_mb)) || Boolean(m?.storage_mode);
+    const ramMb = m?.ram_mb !== undefined && Number.isFinite(m.ram_mb) ? Math.max(0, m.ram_mb) : 0;
+    const ramPct = ramMb > 0 ? Math.min(100, Math.max(2, (ramMb / RAM_BUDGET_MB) * 100)) : 0;
+    const ramSeverity = getRamSeverityClass(ramMb);
+    const storageBadge = formatStorageModeBadge(m?.storage_mode);
+    const savingsRatio =
+      m?.memory_savings_ratio !== undefined &&
+      Number.isFinite(m.memory_savings_ratio) &&
+      m.memory_savings_ratio > 1.05
+        ? m.memory_savings_ratio
+        : undefined;
+    const savingsLabel = savingsRatio
+      ? `${savingsRatio >= 10 ? Math.round(savingsRatio) : savingsRatio.toFixed(1)}× saved`
+      : undefined;
 
     return (
       <div className="bmm-msp-panel">
@@ -152,24 +222,80 @@ export class BiologyMmTelemetryControls extends CollapsableControls<CollapsableP
           </div>
         </div>
 
+        {hasRamMetrics && (
+          <div className="bmm-msp-ram-box">
+            <div className="bmm-msp-ram-hdr">
+              <span>Engine RAM</span>
+              <strong>
+                {m?.ram_mb !== undefined && Number.isFinite(m.ram_mb) ? formatRamMb(ramMb) : '—'} / 24 GB
+              </strong>
+            </div>
+            <div
+              className="bmm-msp-ram-bar"
+              aria-label="Live Engine RAM Budget"
+              title={
+                m?.naive_float64_ram_mb !== undefined && Number.isFinite(m.naive_float64_ram_mb)
+                  ? `Using ${formatRamMb(ramMb)} vs ${formatRamMb(m.naive_float64_ram_mb)} naive float64`
+                  : `Engine RAM: ${formatRamMb(ramMb)} / 24 GB`
+              }
+            >
+              <div className={`bmm-msp-ram-fill ${ramSeverity}`} style={{ width: `${ramPct}%` }} />
+            </div>
+            <div className="bmm-msp-ram-meta">
+              <span
+                className={`bmm-msp-ram-badge ${isCompactMode ? 'is-compact' : ''}`}
+                title={m?.storage_mode ?? 'float64'}
+              >
+                {storageBadge}
+              </span>
+              <span className="bmm-msp-ram-extra">
+                {savingsLabel && <strong className="bmm-msp-ram-savings">{savingsLabel}</strong>}
+                {isCompactMode && m?.active_all_atom_count !== undefined && (
+                  <span title={`Active All-Atom count: ${m.active_all_atom_count.toLocaleString()}`}>
+                    {savingsLabel ? ' · ' : ''}AA {formatCompactCount(m.active_all_atom_count)}
+                  </span>
+                )}
+              </span>
+            </div>
+          </div>
+        )}
+
         <div className="bmm-ms-telemetry">
-          <div className="bmm-ms-telemetry-hdr">
+          <div
+            className="bmm-ms-telemetry-hdr"
+            title={`All-Atom: ${aaCount.toLocaleString()} · Coarse-Grained: ${cgCount.toLocaleString()} · Rigid Scaffold: ${rigidCount.toLocaleString()}`}
+          >
             <span>Multiscale Zones</span>
-            <span>
-              AA {aaCount.toLocaleString()} · CG {cgCount.toLocaleString()} · Rigid {rigidCount.toLocaleString()}
+            <span className="bmm-ms-telemetry-counts">
+              AA {formatCompactCount(aaCount)} · CG {formatCompactCount(cgCount)} · Rigid {formatCompactCount(rigidCount)}
             </span>
           </div>
           <div className="bmm-ms-bar" aria-label="Multiscale Zone Distribution">
-            <div className="bmm-ms-seg-aa" style={{ width: `${aaPct}%` }} title={`All-Atom: ${aaCount}`} />
-            <div className="bmm-ms-seg-cg" style={{ width: `${cgPct}%` }} title={`Coarse-Grained: ${cgCount}`} />
-            <div className="bmm-ms-seg-rigid" style={{ width: `${rigidPct}%` }} title={`Rigid Scaffold: ${rigidCount}`} />
+            <div
+              className="bmm-ms-seg-aa"
+              style={{ width: `${aaPct}%`, minWidth: aaCount > 0 ? '3px' : undefined }}
+              title={`All-Atom: ${aaCount.toLocaleString()}`}
+            />
+            <div
+              className="bmm-ms-seg-cg"
+              style={{ width: `${cgPct}%`, minWidth: cgCount > 0 ? '3px' : undefined }}
+              title={`Coarse-Grained: ${cgCount.toLocaleString()}`}
+            />
+            <div
+              className="bmm-ms-seg-rigid"
+              style={{ width: `${rigidPct}%`, minWidth: rigidCount > 0 ? '3px' : undefined }}
+              title={`Rigid Scaffold: ${rigidCount.toLocaleString()}`}
+            />
           </div>
         </div>
 
-        <div className="bmm-delta-bar">
+        <div
+          className="bmm-delta-bar"
+          title={`${dirtyAtoms.toLocaleString()} / ${totalAtoms.toLocaleString()} dirty atoms · ${formatBytes(packetBytes)}`}
+        >
           <span>Delta Stream</span>
           <strong>
-            {dirtyAtoms.toLocaleString()}/{totalAtoms.toLocaleString()} dirty · {formatBytes(packetBytes)}
+            {formatCompactCount(dirtyAtoms)}/{formatCompactCount(totalAtoms)} dirty · {formatBytes(packetBytes)}
           </strong>
         </div>
 

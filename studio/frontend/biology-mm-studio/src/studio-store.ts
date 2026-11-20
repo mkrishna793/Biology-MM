@@ -21,6 +21,7 @@ import type {
   SimulationMetrics,
   SimulationMode,
   SteerAtomState,
+  StorageMode,
   SteerRequest,
   StudioCapabilities,
 } from './types.js';
@@ -63,6 +64,7 @@ export interface StudioStoreState {
   isRelaxing: boolean;
   steerAtomState: SteerAtomState;
   deltaThresholdAng: number;
+  storageMode: StorageMode;
 }
 
 const MAX_TELEMETRY_POINTS = 300;
@@ -158,6 +160,7 @@ export class BiologyMmStudioStore {
     isRelaxing: false,
     steerAtomState: { ...INITIAL_STEER_ATOM_STATE },
     deltaThresholdAng: 0.02,
+    storageMode: 'auto',
   };
 
   private readonly listeners = new Set<() => void>();
@@ -217,6 +220,11 @@ export class BiologyMmStudioStore {
     controller.setVolumeVisible(this.state.overlays.showVolume);
 
     const subStats = controller.frameStats$.subscribe((stats) => {
+      const metrics = this.state.metrics;
+      const reportedAtoms =
+        metrics?.storage_mode === 'symmetry-compact' && metrics.n_atoms > stats.nAtoms
+          ? metrics.n_atoms
+          : stats.nAtoms;
       this.setState({
         isReversed: stats.reversed,
         frameStats: {
@@ -224,7 +232,7 @@ export class BiologyMmStudioStore {
           fps: stats.fps,
           frameId: stats.frameId,
           simTimePs: stats.simTimePs,
-          nAtoms: stats.nAtoms,
+          nAtoms: reportedAtoms,
           scalarMin: stats.scalarMin,
           scalarMax: stats.scalarMax,
           activeChannel: stats.activeChannel,
@@ -394,29 +402,41 @@ export class BiologyMmStudioStore {
     channel: PhysicsChannelName,
     palette: PaletteName,
     colorMode: StudioColorMode,
+    storageMode?: string,
   ): Promise<void> {
     const ctrl = this.resolveController();
     this.pendingPackets = [];
     this.closeWebSocket();
 
+    const preserveExternalScaffold =
+      storageMode === 'symmetry-compact' ||
+      nAtoms > BiologyMmStreamController.COMPACT_SCAFFOLD_ATOM_THRESHOLD;
+    const activateOpts = { keepExternalVisible: preserveExternalScaffold, storageMode };
+
     if (ctrl) {
       ctrl.setPalette(palette);
-      if (nAtoms > 0 && nAtoms <= BiologyMmStreamController.NATIVE_STRUCTURE_ATOM_LIMIT) {
+      if (!preserveExternalScaffold && nAtoms > 0 && nAtoms <= BiologyMmStreamController.NATIVE_STRUCTURE_ATOM_LIMIT) {
         try {
           const res = await fetch(
             `/api/sessions/${encodeURIComponent(sid)}/structure.cif?channel=${encodeURIComponent(channel)}`,
           );
           if (res.ok) {
             const cifText = await res.text();
-            await ctrl.activateSessionStructure(cifText, title, nAtoms, colorMode);
+            await ctrl.activateSessionStructure(cifText, title, nAtoms, colorMode, activateOpts);
           } else {
-            await ctrl.activateSessionStructure('', title, nAtoms + BiologyMmStreamController.NATIVE_STRUCTURE_ATOM_LIMIT + 1, colorMode);
+            await ctrl.activateSessionStructure(
+              '',
+              title,
+              nAtoms + BiologyMmStreamController.NATIVE_STRUCTURE_ATOM_LIMIT + 1,
+              colorMode,
+              activateOpts,
+            );
           }
         } catch {
           // Fall back silently to binary WS particle stream if CIF fetch fails
         }
       } else {
-        await ctrl.activateSessionStructure('', title, nAtoms, colorMode);
+        await ctrl.activateSessionStructure('', title, nAtoms, colorMode, activateOpts);
       }
     }
 
@@ -471,7 +491,7 @@ export class BiologyMmStudioStore {
         },
       });
 
-      await this.activateSessionScene(res.session_id, title, nAtoms, nextChannel, nextPalette, nextColorMode);
+      await this.activateSessionScene(res.session_id, title, nAtoms, nextChannel, nextPalette, nextColorMode, res.metrics?.storage_mode);
     } catch (err) {
       this.setState({ error: err instanceof Error ? err.message : 'Failed to load preset' });
     } finally {
@@ -497,7 +517,7 @@ export class BiologyMmStudioStore {
       extractOpts,
     );
     const useSymmetry = Boolean(
-      symExtracted && symExtracted.nTransforms > 1 && symExtracted.totalAtoms > 100_000,
+      symExtracted && symExtracted.nTransforms > 1 && symExtracted.totalAtoms > 25_000,
     );
 
     const binExtracted = useSymmetry
@@ -527,7 +547,7 @@ export class BiologyMmStudioStore {
 
     try {
       const endpoint = useSymmetry
-        ? '/api/sessions/create-from-symmetry'
+        ? `/api/sessions/create-from-symmetry?storage_mode=${encodeURIComponent(this.state.storageMode)}`
         : '/api/sessions/create-from-binary';
       const payloadBuffer = useSymmetry ? symExtracted!.buffer : binExtracted!.buffer;
 
@@ -566,7 +586,7 @@ export class BiologyMmStudioStore {
         },
       });
 
-      await this.activateSessionScene(res.session_id, title, nAtoms, channel, palette, 'default');
+      await this.activateSessionScene(res.session_id, title, nAtoms, channel, palette, 'default', res.metrics?.storage_mode);
 
       if (useSymmetry && symExtracted) {
         PluginCommands.Toast.Show(this.plugin, {
@@ -652,7 +672,7 @@ export class BiologyMmStudioStore {
         },
       });
 
-      await this.activateSessionScene(sid, title, nAtoms, channel, palette, 'default');
+      await this.activateSessionScene(sid, title, nAtoms, channel, palette, 'default', res.metrics?.storage_mode);
       return true;
     } catch (err) {
       this.setState({
@@ -716,6 +736,7 @@ export class BiologyMmStudioStore {
           this.state.activeChannel,
           this.state.activePalette,
           nextMode,
+          res.metrics?.storage_mode,
         );
       }
       return res;
@@ -949,6 +970,30 @@ export class BiologyMmStudioStore {
     } catch (err) {
       this.setState({ error: err instanceof Error ? err.message : 'Failed to clear steered MD spring' });
     }
+  }
+
+  setStorageMode(mode: StorageMode): void {
+    this.setState({ storageMode: mode });
+  }
+
+  async focusZoneAtCameraTarget(
+    aaRadiusAng?: number,
+    cgRadiusAng?: number,
+  ): Promise<MultiscaleZoneConfig | null> {
+    const target = this.plugin.canvas3d?.camera.getSnapshot().target;
+    if (
+      !target ||
+      target.length < 3 ||
+      !Number.isFinite(target[0]) ||
+      !Number.isFinite(target[1]) ||
+      !Number.isFinite(target[2])
+    ) {
+      this.setState({ error: '3D camera target is unavailable.' });
+      return null;
+    }
+    const aaR = aaRadiusAng ?? this.state.multiscale?.aa_radius_ang ?? 15.0;
+    const cgR = cgRadiusAng ?? this.state.multiscale?.cg_radius_ang ?? Math.max(aaR * 2, 30.0);
+    return this.setFocusZone([target[0], target[1], target[2]], aaR, cgR);
   }
 
   setDeltaThreshold(thresholdAng: number): void {

@@ -160,6 +160,7 @@ export function decodeInt16Fractional(q16: Int16Array, boxH: Float32Array, out?:
 }
 
 function copyFloat32Slice(buf: ArrayBuffer, offset: number, count: number): Float32Array {
+  if (count <= 0) return new Float32Array(0);
   const bytes = count * 4;
   if (offset % 4 === 0) {
     return new Float32Array(buf.slice(offset, offset + bytes));
@@ -171,6 +172,7 @@ function copyFloat32Slice(buf: ArrayBuffer, offset: number, count: number): Floa
 }
 
 function copyUint32Slice(buf: ArrayBuffer, offset: number, count: number): Uint32Array {
+  if (count <= 0) return new Uint32Array(0);
   const bytes = count * 4;
   if (offset % 4 === 0) {
     return new Uint32Array(buf.slice(offset, offset + bytes));
@@ -182,6 +184,7 @@ function copyUint32Slice(buf: ArrayBuffer, offset: number, count: number): Uint3
 }
 
 function copyInt16Slice(buf: ArrayBuffer, offset: number, count: number): Int16Array {
+  if (count <= 0) return new Int16Array(0);
   const bytes = count * 2;
   if (offset % 2 === 0) {
     return new Int16Array(buf, offset, count);
@@ -245,13 +248,19 @@ export function decodeTriumMessage(buffer: ArrayBuffer): TriumMessage {
     }
 
     case MsgType.FRAME_TILE_PATCH: {
-      const boxH = copyFloat32Slice(buffer, off, 9); off += 36;
+      const payloadEnd = HEADER_BYTES + header.payloadBytes;
+      const hasBox =
+        (header.flags & FrameFlags.HAS_BOX) !== 0 ||
+        (header.flags & FrameFlags.INT16_FRACTIONAL) !== 0;
+      const boxH = hasBox && off + 36 <= payloadEnd ? copyFloat32Slice(buffer, off, 9) : new Float32Array(9);
+      if (hasBox && off + 36 <= payloadEnd) off += 36;
+
       const atomIndices = copyUint32Slice(buffer, off, header.nAtoms); off += 4 * header.nAtoms;
       let coords: Float32Array;
       if (header.flags & FrameFlags.INT16_FRACTIONAL) {
         const q16 = copyInt16Slice(buffer, off, 3 * header.nAtoms); off += 6 * header.nAtoms;
         const pad = (4 - (off % 4)) % 4;
-        if (pad > 0 && off + pad <= HEADER_BYTES + header.payloadBytes) {
+        if (pad > 0 && off + pad <= payloadEnd) {
           off += pad;
         }
         coords = decodeInt16Fractional(q16, boxH);
@@ -259,7 +268,7 @@ export function decodeTriumMessage(buffer: ArrayBuffer): TriumMessage {
         coords = copyFloat32Slice(buffer, off, 3 * header.nAtoms); off += 12 * header.nAtoms;
       }
       let scalars: Float32Array | undefined;
-      if (header.flags & FrameFlags.HAS_SCALAR) {
+      if ((header.flags & FrameFlags.HAS_SCALAR) && off + 4 * header.nAtoms <= payloadEnd) {
         scalars = copyFloat32Slice(buffer, off, header.nAtoms);
       }
       return {

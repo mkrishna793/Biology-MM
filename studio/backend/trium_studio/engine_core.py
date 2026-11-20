@@ -99,6 +99,7 @@ ELEMENT_RADII_ANG: Dict[int, float] = {
 }
 
 KB_KJ_MOL_K = 0.00831446261815324
+MAX_SNAPSHOT_RAM_BYTES = 64 * 1024 * 1024  # 64 MB hard cap on StepSnapshot history
 
 _SAFE_MATH: Dict[str, Any] = {
     "exp": np.exp,
@@ -881,6 +882,8 @@ class SimulationSession:
         self._custom_spline: Optional[CubicSplineRadialTable] = None
         self._history: "OrderedDict[int, StepSnapshot]" = OrderedDict()
         self._max_history = max_history
+        self._history_ram_bytes: int = 0
+        self.MAX_SNAPSHOT_RAM_BYTES: int = MAX_SNAPSHOT_RAM_BYTES
 
         self.active_channel = 0
         self.tile_ids = compute_morton_tiles(self.positions[:n], self.box_H, tile_size=32)
@@ -1540,6 +1543,7 @@ class SimulationSession:
             self._initial_total_energy = float(self.potential_energy + self.kinetic_energy)
             self._dirty_tracker.reset()
             self._history.clear()
+            self._history_ram_bytes = 0
             self._record_history()
             return {
                 "iterations": iters,
@@ -1720,7 +1724,54 @@ class SimulationSession:
         out[~self.active_mask] = 0.0
         return out
 
+    @staticmethod
+    def _snapshot_nbytes(snap: StepSnapshot) -> int:
+        total = (
+            int(snap.positions.nbytes)
+            + int(snap.momenta.nbytes)
+            + int(snap.forces.nbytes)
+            + int(snap.box_H.nbytes)
+        )
+        for arr in snap.scalars.values():
+            total += int(arr.nbytes)
+        return total
+
+    def _compute_ram_bytes(self) -> int:
+        total = 0
+        for arr in (
+            self.positions,
+            self.momenta,
+            self.forces,
+            self.masses,
+            self.charges,
+            self.sigma,
+            self.epsilon,
+            self.active_mask,
+            self.atomic_numbers,
+            self.radii_ang,
+            self.ternary_states,
+            self.bond_orders_per_atom,
+            self.atomic_stress,
+            self.tile_ids,
+            self.multiscale_zones,
+            self._dirty_tracker.tile_ids,
+            self._dirty_tracker.last_sent_coords_ang,
+        ):
+            if isinstance(arr, np.ndarray):
+                total += int(arr.nbytes)
+        total += int(self._history_ram_bytes)
+        return total
+
     def _record_history(self) -> None:
+        est_bytes = (
+            int(self.positions.nbytes)
+            + int(self.momenta.nbytes)
+            + int(self.forces.nbytes)
+            + int(self.box_H.nbytes)
+            + int(self.capacity) * 8
+        )
+        if est_bytes > MAX_SNAPSHOT_RAM_BYTES:
+            return
         scalars = {name: self.compute_scalar_channel(name) for name in ("force-magnitude", "bond-order")}
         snap = StepSnapshot(
             step=self.step_count,
@@ -1733,9 +1784,16 @@ class SimulationSession:
             kinetic_energy=self.kinetic_energy,
             scalars=scalars,
         )
+        snap_bytes = self._snapshot_nbytes(snap)
+        if snap_bytes > MAX_SNAPSHOT_RAM_BYTES:
+            return
+        if self.step_count in self._history:
+            self._history_ram_bytes = max(0, self._history_ram_bytes - self._snapshot_nbytes(self._history[self.step_count]))
         self._history[self.step_count] = snap
-        while len(self._history) > self._max_history:
-            self._history.popitem(last=False)
+        self._history_ram_bytes += snap_bytes
+        while len(self._history) > self._max_history or self._history_ram_bytes > MAX_SNAPSHOT_RAM_BYTES:
+            _, evicted = self._history.popitem(last=False)
+            self._history_ram_bytes = max(0, self._history_ram_bytes - self._snapshot_nbytes(evicted))
 
     def scrub_to_step(self, target_step: int) -> Tuple[Dict[str, Any], bool]:
         """Restore recorded snapshot (supporting exact reversible time-scrubbing)."""
@@ -1789,11 +1847,28 @@ class SimulationSession:
                     "pull_force_kj_mol_nm": float(self._smd_pull.get("pull_force_kj_mol_nm", 0.0)),
                 }
 
+            ram_bytes = self._compute_ram_bytes()
+            ram_mb = float(ram_bytes) / (1024.0 * 1024.0)
+            naive_float64_ram_mb = float(n_act) * 160.0 / 1.0e6
+            storage_mode = "ternary-compact" if self.n_real > 200_000 else "float64-full"
+            memory_savings_ratio = (naive_float64_ram_mb / max(ram_mb, 1e-6)) if n_act > 0 else 1.0
+            active_aa_count = (
+                int(self._multiscale_partition.n_all_atom)
+                if self._multiscale_partition is not None
+                else int(n_act)
+            )
+
             return {
                 "step": int(self.step_count),
                 "time_ps": round(self.sim_time_ps, 6),
                 "n_atoms": n_act,
                 "capacity": int(self.capacity),
+                "active_all_atom_count": active_aa_count,
+                "storage_mode": storage_mode,
+                "ram_bytes": int(ram_bytes),
+                "ram_mb": round(ram_mb, 4),
+                "naive_float64_ram_mb": round(naive_float64_ram_mb, 4),
+                "memory_savings_ratio": round(memory_savings_ratio, 2),
                 "potential_energy": float(self.potential_energy),
                 "kinetic_energy": float(self.kinetic_energy),
                 "total_energy": total_e,

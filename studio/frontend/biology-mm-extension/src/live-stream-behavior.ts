@@ -102,6 +102,7 @@ const controllerByPlugin = new WeakMap<PluginContext, BiologyMmStreamController>
 
 export class BiologyMmStreamController {
   static readonly NATIVE_STRUCTURE_ATOM_LIMIT = 25_000;
+  static readonly COMPACT_SCAFFOLD_ATOM_THRESHOLD = 250_000;
 
   readonly plugin: PluginContext;
   readonly updater: GpuParticleStreamUpdater;
@@ -129,6 +130,8 @@ export class BiologyMmStreamController {
   private reprRef: string | undefined;
 
   private useNativeStructure = false;
+  private preserveExternalScaffold = false;
+  private defaultSpacefillParams: ReturnType<typeof PD.getDefaultValues<typeof SpacefillParticlesParams>> | undefined;
   private structureColorMode: 'default' | PhysicsChannelName = 'default';
   private desiredOverlays: OverlayVisibility = {
     showBox: true,
@@ -296,17 +299,14 @@ export class BiologyMmStreamController {
       }
 
       case MsgType.FRAME_TILE_PATCH: {
-        const msg = decodeTriumMessage(buffer);
-        if (msg.kind === 'tile-patch') {
-          if (this.pendingRender && this.needsFrameCommit) {
-            this.droppedFrames++;
-          }
-          this.updater.applyTilePatch(msg, buffer.byteLength);
-          this.lastDirtyAtomCount = msg.atomIndices.length;
-          this.lastPacketBytes = buffer.byteLength;
-          this.needsFrameCommit = true;
-          this.requestRender();
+        if (this.pendingRender && this.needsFrameCommit) {
+          this.droppedFrames++;
         }
+        this.updater.applyTilePatchBinary(buffer, header);
+        this.lastDirtyAtomCount = this.updater.lastDirtyAtomCount;
+        this.lastPacketBytes = buffer.byteLength;
+        this.needsFrameCommit = true;
+        this.requestRender();
         break;
       }
 
@@ -346,25 +346,36 @@ export class BiologyMmStreamController {
     label: string,
     nAtoms: number,
     defaultColorMode: 'default' | PhysicsChannelName = 'default',
+    options?: { readonly keepExternalVisible?: boolean; readonly storageMode?: string },
   ): Promise<void> {
     if (this.disposed) return;
 
-    // Hide external static Mol* structures safely so they do not overlap with the live simulation stream
-    const hierarchy = this.plugin.managers?.structure?.hierarchy;
-    if (hierarchy) {
-      const currentStructures = hierarchy.current.structures;
-      const external = currentStructures.filter((s) => s.cell.transform.ref !== this.structureBridge.liveStructureRef);
-      if (external.length > 0) {
-        const isBusy = this.plugin.state.data.behaviors.isUpdating.value || Boolean((this.plugin.state.data as any).inTransaction);
-        if (!isBusy) {
-          hierarchy.toggleVisibility(external, 'hide');
-        } else {
-          queueMicrotask(() => {
-            const stillBusy = this.plugin.state.data.behaviors.isUpdating.value || Boolean((this.plugin.state.data as any).inTransaction);
-            if (!this.disposed && !stillBusy) {
-              hierarchy.toggleVisibility(external, 'hide');
-            }
-          });
+    const preserveExternal =
+      Boolean(options?.keepExternalVisible) ||
+      options?.storageMode === 'symmetry-compact' ||
+      nAtoms > BiologyMmStreamController.COMPACT_SCAFFOLD_ATOM_THRESHOLD;
+    this.preserveExternalScaffold = preserveExternal;
+
+    // Hide external static Mol* structures for standard sessions so they do not overlap with
+    // the live simulation stream, but preserve external assemblies (e.g. 40M viral capsids)
+    // as rigid-scaffold visual context during symmetry-compact / >250k multiscale sessions.
+    if (!preserveExternal) {
+      const hierarchy = this.plugin.managers?.structure?.hierarchy;
+      if (hierarchy) {
+        const currentStructures = hierarchy.current.structures;
+        const external = currentStructures.filter((s) => s.cell.transform.ref !== this.structureBridge.liveStructureRef);
+        if (external.length > 0) {
+          const isBusy = this.plugin.state.data.behaviors.isUpdating.value || Boolean((this.plugin.state.data as any).inTransaction);
+          if (!isBusy) {
+            hierarchy.toggleVisibility(external, 'hide');
+          } else {
+            queueMicrotask(() => {
+              const stillBusy = this.plugin.state.data.behaviors.isUpdating.value || Boolean((this.plugin.state.data as any).inTransaction);
+              if (!this.disposed && !stillBusy) {
+                hierarchy.toggleVisibility(external, 'hide');
+              }
+            });
+          }
         }
       }
     }
@@ -492,7 +503,7 @@ export class BiologyMmStreamController {
       if (!buf || buf.length < count) continue;
       const range = this.updater.getScalarRange(ch);
       map.set(ch, {
-        values: buf.slice(0, count),
+        values: this.updater.getScalarStagingView(ch),
         min: range.min,
         max: range.max,
       });
@@ -535,13 +546,16 @@ export class BiologyMmStreamController {
 
       if ((this.needsFrameCommit || this.needsTopologyCommit || this.needsThemeCommit) && this.updater.count > 0) {
         const wasTopology = this.needsTopologyCommit;
+        const wasTheme = this.needsThemeCommit;
+        const wasScalarsDirty = this.updater.scalarsDirty;
         const forceNew = this.needsTopologyCommit;
         this.needsFrameCommit = false;
         this.needsTopologyCommit = false;
         this.needsThemeCommit = false;
+        const dirtyRange = this.updater.consumeDirtyRange();
 
         if (this.useNativeStructure) {
-          if (this.structureBridge.isLoaded) {
+          if (this.structureBridge.isLoaded && (dirtyRange.isDirty || wasTopology || wasTheme)) {
             await this.structureBridge.updateLiveFrame(
               this.updater.coords,
               this.updater.count,
@@ -550,11 +564,11 @@ export class BiologyMmStreamController {
               this.updater.simTimePs,
             );
           }
-        } else {
+        } else if (dirtyRange.isDirty || wasTopology || wasTheme || !this.listRef) {
           const list = this.updater.getParticleList(forceNew);
-          await this.commitParticleState(list, channel, palette);
+          await this.commitParticleState(list, channel, palette, wasTopology || wasTheme || wasScalarsDirty);
           await this.overlayManager.updateCoords(this.updater.coords, this.updater.boxH);
-          if (wasTopology) {
+          if (wasTopology && !this.preserveExternalScaffold) {
             this.plugin.canvas3d?.requestCameraReset();
           }
         }
@@ -598,6 +612,16 @@ export class BiologyMmStreamController {
       });
     } finally {
       this.isCommitting = false;
+      if (
+        !this.disposed &&
+        (this.needsFrameCommit ||
+          this.needsTopologyCommit ||
+          this.needsThemeCommit ||
+          this.pendingOverlayMsg ||
+          this.pendingVolumeMsg)
+      ) {
+        this.requestRender();
+      }
     }
   }
 
@@ -605,28 +629,31 @@ export class BiologyMmStreamController {
     list: ParticleList,
     channel: PhysicsChannelName,
     palette: PaletteName,
+    updateRepr: boolean,
   ): Promise<void> {
     const state = this.plugin.state?.data;
     if (!state) return;
 
-    const themeName = PHYSICS_CHANNEL_TO_THEME[channel];
-    const reprParams = {
-      type: { name: 'spacefill', params: PD.getDefaultValues(SpacefillParticlesParams) },
-      colorTheme: {
-        name: themeName,
-        params: {
-          palette,
-          domain: { name: 'auto', params: {} },
-        },
-      },
-      sizeTheme: {
-        name: 'particle-size',
-        params: { scale: 1.0, defaultSize: 0 },
-      },
-    };
-
     const existingList = this.listRef ? state.cells.get(this.listRef) : undefined;
     if (!existingList) {
+      if (!this.defaultSpacefillParams) {
+        this.defaultSpacefillParams = PD.getDefaultValues(SpacefillParticlesParams);
+      }
+      const themeName = PHYSICS_CHANNEL_TO_THEME[channel];
+      const reprParams = {
+        type: { name: 'spacefill', params: this.defaultSpacefillParams },
+        colorTheme: {
+          name: themeName,
+          params: {
+            palette,
+            domain: { name: 'auto', params: {} },
+          },
+        },
+        sizeTheme: {
+          name: 'particle-size',
+          params: { scale: 1.0, defaultSize: 0 },
+        },
+      };
       const builder = state.build();
       const listNode = builder.toRoot().apply(BiologyMmParticleListTransform, { list });
       const reprNode = listNode.apply(ParticlesRepresentation3D, reprParams);
@@ -636,8 +663,25 @@ export class BiologyMmStreamController {
     } else {
       const builder = state.build();
       builder.to(this.listRef!).update({ list });
-      if (this.reprRef && state.cells.get(this.reprRef)) {
-        builder.to(this.reprRef).update(reprParams);
+      if (updateRepr && this.reprRef && state.cells.get(this.reprRef)) {
+        if (!this.defaultSpacefillParams) {
+          this.defaultSpacefillParams = PD.getDefaultValues(SpacefillParticlesParams);
+        }
+        const themeName = PHYSICS_CHANNEL_TO_THEME[channel];
+        builder.to(this.reprRef).update({
+          type: { name: 'spacefill', params: this.defaultSpacefillParams },
+          colorTheme: {
+            name: themeName,
+            params: {
+              palette,
+              domain: { name: 'auto', params: {} },
+            },
+          },
+          sizeTheme: {
+            name: 'particle-size',
+            params: { scale: 1.0, defaultSize: 0 },
+          },
+        });
       }
       await builder.commit();
     }

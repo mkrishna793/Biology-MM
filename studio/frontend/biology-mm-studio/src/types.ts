@@ -16,6 +16,8 @@ export type SimulationMode =
   | 'custom_spline'
   | 'nanopore_gcmc_nemd';
 
+export type StorageMode = 'auto' | 'symmetry-compact' | 'ternary-compact' | 'full';
+
 export type PaletteName =
   | 'plasma'
   | 'thermal-div'
@@ -112,6 +114,11 @@ export interface SimulationMetrics {
   health_status?: PhysicsHealthStatus | string;
   multiscale?: MultiscaleZoneConfig;
   delta_stats?: DeltaStreamStats;
+  ram_mb?: number;
+  naive_float64_ram_mb?: number;
+  memory_savings_ratio?: number;
+  storage_mode?: string;
+  active_all_atom_count?: number;
 }
 
 export interface AtomInspection {

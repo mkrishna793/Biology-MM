@@ -540,7 +540,8 @@ export class BiologyMmStructureBridge {
     const liveStruct = this.structureRef
       ? structures.find((s) => s.cell.transform.ref === this.structureRef)
       : undefined;
-    const components = liveStruct?.components ?? structures.flatMap((s) => s.components);
+    if (!liveStruct) return;
+    const components = liveStruct.components;
     if (!components || components.length === 0) return;
 
     if (this.colorMode === 'default') {
@@ -735,52 +736,82 @@ export function extractActiveMolstarSymmetryBinary(
   if (!structure) return null;
 
   const atomicUnits: Unit.Atomic[] = [];
-  let totalAtoms = 0;
   for (const u of structure.units) {
-    if (Unit.isAtomic(u)) {
+    if (Unit.isAtomic(u) && u.elements.length > 0) {
       atomicUnits.push(u);
-      totalAtoms += u.elements.length;
     }
   }
-  if (atomicUnits.length <= 1 || totalAtoms === 0) return null;
+  if (atomicUnits.length <= 1) return null;
 
-  // Group atomic units by their 4x4 symmetry operator matrix.
-  // In biological assemblies (e.g. icosahedral capsids), each symmetry copy shares
-  // an operator matrix and contains the same set of ASU chains.
-  const opBuckets = new Map<string, { matrix: ArrayLike<number>; units: Unit.Atomic[]; atomCount: number }>();
+  // Group atomic units by `unit.invariantId` (falling back to model + element count).
+  // In Mol* biological assemblies (e.g. 5J7V Assembly 1 with 2,760 units, whether
+  // rendered as Gaussian Surface, Spacefill, or Cartoon), symmetry copies of the same
+  // ASU subunit share `invariantId` and differ only by `unit.conformation.operator.matrix`.
+  // Grouping by invariantId avoids ever allocating a 40M-atom array in Chrome and stays
+  // resilient even if a structure contains minor non-replicated hetero/solvent units.
+  const invariantGroups = new Map<string, { units: Unit.Atomic[]; atomCount: number; totalGroupAtoms: number }>();
   for (const u of atomicUnits) {
+    const invKey =
+      typeof u.invariantId === 'number'
+        ? `inv:${u.invariantId}`
+        : `mod:${u.model?.id ?? '0'}:${u.elements.length}`;
+    let group = invariantGroups.get(invKey);
+    if (!group) {
+      group = { units: [], atomCount: u.elements.length, totalGroupAtoms: 0 };
+      invariantGroups.set(invKey, group);
+    }
+    group.units.push(u);
+    group.totalGroupAtoms += u.elements.length;
+  }
+
+  // Pick the dominant replicated invariant group (must have >1 symmetry copies)
+  let primaryGroup: { units: Unit.Atomic[]; atomCount: number; totalGroupAtoms: number } | null = null;
+  for (const group of invariantGroups.values()) {
+    if (group.units.length <= 1) continue;
+    if (!primaryGroup || group.totalGroupAtoms > primaryGroup.totalGroupAtoms) {
+      primaryGroup = group;
+    }
+  }
+  if (!primaryGroup) return null;
+
+  // Collect all 4x4 operator matrices from the primary replicated group
+  const transforms: ArrayLike<number>[] = [];
+  const primaryOpKeys = new Set<string>();
+  for (const u of primaryGroup.units) {
     const mat = u.conformation.operator.matrix;
-    const key = matrixKey(mat);
-    let bucket = opBuckets.get(key);
-    if (!bucket) {
-      bucket = { matrix: mat, units: [], atomCount: 0 };
-      opBuckets.set(key, bucket);
-    }
-    bucket.units.push(u);
-    bucket.atomCount += u.elements.length;
+    transforms.push(mat);
+    primaryOpKeys.add(matrixKey(mat));
   }
+  const nTransforms = transforms.length;
+  if (nTransforms <= 1) return null;
 
-  const buckets = Array.from(opBuckets.values());
-  if (buckets.length <= 1) return null;
-
-  // Verify uniform symmetry replication across all operator buckets
-  const refBucket = buckets[0];
-  const nAsuAtoms = refBucket.atomCount;
+  // Include any co-replicated ASU subunit groups sharing the exact same transform set
+  const asuUnits: Unit.Atomic[] = [primaryGroup.units[0]];
+  let nAsuAtoms = primaryGroup.atomCount;
+  for (const group of invariantGroups.values()) {
+    if (group === primaryGroup || group.units.length !== nTransforms) continue;
+    let matchesPrimaryOps = true;
+    for (const u of group.units) {
+      if (!primaryOpKeys.has(matrixKey(u.conformation.operator.matrix))) {
+        matchesPrimaryOps = false;
+        break;
+      }
+    }
+    if (matchesPrimaryOps) {
+      asuUnits.push(group.units[0]);
+      nAsuAtoms += group.atomCount;
+    }
+  }
   if (nAsuAtoms <= 0) return null;
-  for (let b = 1; b < buckets.length; b++) {
-    if (buckets[b].atomCount !== nAsuAtoms) {
-      return null;
-    }
-  }
 
-  const nTransforms = buckets.length;
+  const totalAtoms = nAsuAtoms * nTransforms;
   const title = targetRef.cell.obj?.label || structure.label || 'Imported Mol* Symmetry Assembly';
   const titleBytes = new TextEncoder().encode(title);
   const modeStr = options?.mode ?? 'metal_verlet';
   const modeBytes = new TextEncoder().encode(modeStr);
 
   let cellBoxAng: [number, number, number] | undefined;
-  for (const u of refBucket.units) {
+  for (const u of asuUnits) {
     if (u.model.sourceData) {
       const sym = ModelSymmetry.Provider.get(u.model);
       const cSize = sym?.spacegroup.cell.size;
@@ -839,7 +870,7 @@ export function extractActiveMolstarSymmetryBinary(
   // Populate ASU coordinates (untransformed invariant positions) and element symbols
   const tmpVec = Vec3();
   let atomIdx = 0;
-  for (const unit of refBucket.units) {
+  for (const unit of asuUnits) {
     const { elements: els, conformation, model } = unit;
     const type_symbol = model.atomicHierarchy.atoms.type_symbol;
     const hasInvariant = typeof conformation.invariantPosition === 'function';
@@ -868,7 +899,7 @@ export function extractActiveMolstarSymmetryBinary(
 
   // Populate 4x4 row-major transforms (transposing Mol*'s column-major Mat4)
   for (let t = 0; t < nTransforms; t++) {
-    const m = buckets[t].matrix;
+    const m = transforms[t];
     const o = t * 16;
     // Row 0
     float32Transforms[o + 0] = m[0];
