@@ -272,7 +272,7 @@ describe('Biology-MM Studio Native Mol* UI & Store', () => {
         });
       }
 
-      if ((url === '/api/sessions/create-from-binary' || url === '/api/sessions/create-from-symmetry' || url === '/api/sessions/from-structure') && method === 'POST') {
+      if ((url.startsWith('/api/sessions/create-from-binary') || url.startsWith('/api/sessions/create-from-symmetry') || url.startsWith('/api/sessions/from-structure')) && method === 'POST') {
         const parsed = bodyStr ? (JSON.parse(bodyStr) as { structure: { title: string; elements: string[] } }) : null;
         return jsonResponse({
           session_id: 'sess-imported',
@@ -353,9 +353,9 @@ describe('Biology-MM Studio Native Mol* UI & Store', () => {
     expect(ok).toBe(true);
     const fromStructCall = fetchCalls.find(
       (c) =>
-        c.url === '/api/sessions/create-from-binary' ||
-        c.url === '/api/sessions/create-from-symmetry' ||
-        c.url === '/api/sessions/from-structure',
+        c.url.startsWith('/api/sessions/create-from-binary') ||
+        c.url.startsWith('/api/sessions/create-from-symmetry') ||
+        c.url.startsWith('/api/sessions/from-structure'),
     );
     expect(fromStructCall).toBeDefined();
 

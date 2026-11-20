@@ -106,7 +106,12 @@ def build_mmcif_from_session(session, channel: Optional[str] = None) -> str:
         active_mask = np.asarray(session.active_mask, dtype=bool)
         active_slots = np.flatnonzero(active_mask)
         coords_ang = np.asarray(session.positions, dtype=np.float64) * coord_to_ang
-        atomic_numbers = np.asarray(session.atomic_numbers, dtype=np.int64)
+        raw_z = np.asarray(session.atomic_numbers, dtype=np.int64)
+        stream_idx = getattr(session, "_stream_atom_indices", None)
+        if stream_idx is not None and raw_z.shape[0] != active_mask.shape[0]:
+            atomic_numbers = raw_z[np.asarray(stream_idx, dtype=np.int64)]
+        else:
+            atomic_numbers = raw_z
         names = list(session.names)
         bonds = list(getattr(session, "bonds", []))
         meta = getattr(session, "structure_metadata", None)

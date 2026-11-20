@@ -726,6 +726,11 @@ class CompactSymmetryMultiscaleSession:
             "all_atom": n_aa,
             "coarse_grained": n_cg,
             "rigid_scaffold": n_rigid,
+            "counts": {
+                "all_atom": n_aa,
+                "coarse_grained": n_cg,
+                "rigid_scaffold": n_rigid,
+            },
             "n_total": int(self.n_atoms),
             "active_subunits_aa": int(self._n_subunits_aa),
             "active_subunits_cg": int(self._n_subunits_cg),

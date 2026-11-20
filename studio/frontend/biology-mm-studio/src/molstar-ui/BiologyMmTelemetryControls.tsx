@@ -88,6 +88,7 @@ function formatStorageModeBadge(mode: string | undefined): string {
   if (!mode) return 'FLOAT64';
   const norm = mode.toLowerCase();
   if (norm === 'symmetry-compact') return 'SYM-COMPACT';
+  if (norm === 'tryte-all-atom') return 'TRYTE-27+5';
   if (norm === 'ternary-compact') return 'TERNARY-COMPACT';
   if (norm === 'full' || norm === 'float64') return 'FLOAT64';
   return mode.toUpperCase();
@@ -138,7 +139,9 @@ export class BiologyMmTelemetryControls extends CollapsableControls<CollapsableP
 
     const health = resolveHealthStatus(m);
     const isCompactMode =
-      m?.storage_mode === 'symmetry-compact' || m?.storage_mode === 'ternary-compact';
+      m?.storage_mode === 'symmetry-compact' ||
+      m?.storage_mode === 'tryte-all-atom' ||
+      m?.storage_mode === 'ternary-compact';
 
     const ms = m?.multiscale ?? snap.multiscale;
     const msCounts = ms?.counts;

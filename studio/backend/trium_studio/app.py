@@ -31,11 +31,12 @@ except ImportError:
     export_mvsx_bytes = None  # type: ignore[assignment]
     _HAS_MVS_EXPORTER = False
 
-from .multiscale import expand_symmetry_assembly, unpack_tsym_binary
-from .ternary_compact import CompactSymmetryMultiscaleSession
+from .multiscale import _decode_element_byte, expand_symmetry_assembly, unpack_tsym_binary
+from .ternary_compact import CompactSymmetryMultiscaleSession, encode_elements_uint8
+from .tryte_tiles import TryteTileFullAtomSession
 from .presets import PRESET_DEFINITIONS, create_preset_session, get_preset, list_presets
 from .sandbox import execute_user_code
-from .structure_loader import load_structure_from_bytes
+from .structure_loader import load_structure_from_bytes, load_structure_pair_from_bytes
 from .ws_manager import PALETTE_NAMES, ManagedSession, SessionManager
 
 STUDIO_VERSION = "1.0.0"
@@ -284,6 +285,7 @@ def create_app(dist_dir: Optional[Path] = None) -> FastAPI:
             "supports_mvsx": _HAS_MVS_EXPORTER,
             "supports_symmetry_compact": True,
             "supports_base243_ternary": True,
+            "supports_tryte_27_plus_5": True,
             "storage_mode": "symmetry-compact",
             "ram_mb": round(total_ram_mb, 4),
         }
@@ -316,7 +318,10 @@ def create_app(dist_dir: Optional[Path] = None) -> FastAPI:
 
 
     @application.post("/api/sessions/create-from-binary")
-    async def create_session_from_binary(request: Request) -> Dict[str, Any]:
+    async def create_session_from_binary(
+        request: Request,
+        storage_mode: str = Query("auto"),
+    ) -> Dict[str, Any]:
         """
         Stream multi-million atom structures directly from Mol* as flat binary Float32Array,
         completely bypassing V8 JSON string length limits and RAM heap explosions.
@@ -338,26 +343,61 @@ def create_app(dist_dir: Optional[Path] = None) -> FastAPI:
         if len(body) < offset + coords_bytes:
             raise HTTPException(status_code=400, detail=f"Incomplete coordinates: expected {coords_bytes} bytes, got {len(body) - offset}")
 
+        mode_sel = str(storage_mode or "auto").strip().lower()
+        if mode_sel not in ("auto", "tryte-all-atom", "full", "float64-full"):
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid storage_mode '{storage_mode}'; expected 'auto', 'tryte-all-atom', or 'float64-full'",
+            )
+
         coords_ang = np.frombuffer(body[offset : offset + coords_bytes], dtype=np.float32).reshape(n_atoms, 3)
         offset += coords_bytes
-
-        pos_nm = coords_ang.astype(np.float64) * 0.1
 
         has_elements = bool(flags & 0x01)
         if has_elements and len(body) >= offset + n_atoms:
             elem_bytes = body[offset : offset + n_atoms]
-            names = [chr(b) if chr(b).isalpha() else "C" for b in elem_bytes]
-            masses = np.array([_ELEMENT_MASSES.get(s.upper(), 12.011) for s in names], dtype=np.float64)
+            names = [_decode_element_byte(b) for b in elem_bytes]
             offset += n_atoms
         else:
             names = ["C"] * n_atoms
-            masses = np.full(n_atoms, 12.011, dtype=np.float64)
 
         title = body[offset : offset + title_len].decode("utf-8", errors="ignore") if title_len > 0 else "Imported Mol* Structure"
         offset += title_len
         mode = body[offset : offset + mode_len].decode("utf-8", errors="ignore") if mode_len > 0 else "metal_verlet"
         offset += mode_len
 
+        if mode_sel in ("tryte-all-atom", "full") or (mode_sel == "auto" and n_atoms > 50_000):
+            pos_nm_f32 = (coords_ang * np.float32(0.1)).astype(np.float32, copy=True)
+            z_u8 = encode_elements_uint8(names)
+            box_nm_opt = (float(bx) * 0.1, float(by) * 0.1, float(bz) * 0.1) if (bx > 0 and by > 0 and bz > 0) else None
+            sim_tryte = TryteTileFullAtomSession(
+                positions_nm=pos_nm_f32,
+                atomic_numbers=z_u8,
+                charges=None,
+                box_nm=box_nm_opt,
+                mode=mode,
+                dt=dt if dt > 0 else 0.002,
+                temperature=temperature if temperature > 0 else 300.0,
+                structure_metadata={"source": "molstar-binary-tryte", "title": title, "atom_count": n_atoms},
+            )
+            minimization = sim_tryte.minimize()
+            record = manager.register_session(
+                sim_tryte,
+                default_channel="force-magnitude",
+                default_palette="plasma",
+            )
+            metrics = sim_tryte.get_metrics()
+            metrics["session_id"] = record.session_id
+            return {
+                "session_id": record.session_id,
+                "title": title,
+                "storage_mode": metrics["storage_mode"],
+                "minimization": minimization,
+                "metrics": metrics,
+            }
+
+        pos_nm = coords_ang.astype(np.float64) * 0.1
+        masses = np.array([_ELEMENT_MASSES.get(s.upper(), 12.011) for s in names], dtype=np.float64)
         charges = np.zeros(n_atoms, dtype=np.float64)
 
         margin = 0.9  # 9 Angstroms margin
@@ -421,10 +461,10 @@ def create_app(dist_dir: Optional[Path] = None) -> FastAPI:
         float64 arrays in RAM.
         """
         mode_sel = str(storage_mode or "auto").strip().lower()
-        if mode_sel not in ("auto", "symmetry-compact", "full"):
+        if mode_sel not in ("auto", "symmetry-compact", "tryte-all-atom", "full"):
             raise HTTPException(
                 status_code=400,
-                detail=f"Invalid storage_mode '{storage_mode}'; expected 'auto', 'symmetry-compact', or 'full'",
+                detail=f"Invalid storage_mode '{storage_mode}'; expected 'auto', 'symmetry-compact', 'tryte-all-atom', or 'full'",
             )
 
         body = await request.body()
@@ -446,6 +486,27 @@ def create_app(dist_dir: Optional[Path] = None) -> FastAPI:
                 default_palette="plasma",
             )
             metrics = sim_compact.get_metrics()
+            metrics["session_id"] = record.session_id
+            return {
+                "session_id": record.session_id,
+                "title": sym.title,
+                "n_asu_atoms": sym.n_asu_atoms,
+                "n_transforms": sym.n_transforms,
+                "n_atoms": n_total,
+                "storage_mode": metrics["storage_mode"],
+                "relaxation": relaxation,
+                "metrics": metrics,
+            }
+
+        if mode_sel in ("tryte-all-atom", "full"):
+            sim_tryte = TryteTileFullAtomSession.from_tsym_payload(sym)
+            relaxation = sim_tryte.relax_clashes()
+            record = manager.register_session(
+                sim_tryte,
+                default_channel="force-magnitude",
+                default_palette="plasma",
+            )
+            metrics = sim_tryte.get_metrics()
             metrics["session_id"] = record.session_id
             return {
                 "session_id": record.session_id,
@@ -562,25 +623,75 @@ def create_app(dist_dir: Optional[Path] = None) -> FastAPI:
         mode: str = Query("metal_verlet"),
         dt: float = Query(0.002),
         temperature: float = Query(300.0),
+        storage_mode: str = Query("auto"),
     ) -> Dict[str, Any]:
         """Ingest raw structure bytes (.pdb, .cif/.mmcif, .gro, .xyz, .data) without JSON size bottlenecks."""
-        body = await request.body()
-        if not body:
-            raise HTTPException(status_code=400, detail="Empty request body. Upload raw file bytes.")
-        try:
-            sys, meta = load_structure_from_bytes(body, filename)
-        except Exception as e:
-            raise HTTPException(status_code=400, detail=f"Failed to parse structure file '{filename}': {e}")
+        mode_sel = str(storage_mode or "auto").strip().lower()
+        if mode_sel not in ("auto", "tryte-all-atom", "full", "float64-full"):
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid storage_mode '{storage_mode}'; expected 'auto', 'tryte-all-atom', or 'float64-full'",
+            )
+        content_type = (request.headers.get("content-type") or "").lower()
+        if "multipart/form-data" in content_type:
+            form = await request.form()
+            uploaded_files = []
+            for _key, val in form.multi_items():
+                if hasattr(val, "read"):
+                    try:
+                        data_bytes = await val.read()
+                        if data_bytes:
+                            uploaded_files.append((data_bytes, getattr(val, "filename", None) or filename))
+                    finally:
+                        if hasattr(val, "close"):
+                            await val.close()
+            if not uploaded_files:
+                raise HTTPException(status_code=400, detail="Empty multipart upload. Attach at least one structure file.")
+            try:
+                if len(uploaded_files) == 1:
+                    sys, meta = load_structure_from_bytes(uploaded_files[0][0], uploaded_files[0][1])
+                else:
+                    sys, meta = load_structure_pair_from_bytes(
+                        uploaded_files[0][0],
+                        uploaded_files[0][1],
+                        uploaded_files[1][0],
+                        uploaded_files[1][1],
+                    )
+            except Exception as e:
+                names_str = ", ".join(fn for _, fn in uploaded_files[:2])
+                raise HTTPException(status_code=400, detail=f"Failed to parse uploaded files ({names_str}): {e}")
+        else:
+            body = await request.body()
+            if not body:
+                raise HTTPException(status_code=400, detail="Empty request body. Upload raw file bytes.")
+            try:
+                sys, meta = load_structure_from_bytes(body, filename)
+            except Exception as e:
+                raise HTTPException(status_code=400, detail=f"Failed to parse structure file '{filename}': {e}")
 
-        sim = SimulationSession(
-            sys,
-            mode=mode,
-            dt=dt,
-            temperature=temperature,
-            rcut=1.0,
-            alpha_dsf=0.25 if np.any(sys.charges != 0.0) else 0.0,
-            structure_metadata=meta,
-        )
+        if mode_sel in ("tryte-all-atom", "full") or (mode_sel == "auto" and sys.n_atoms > 50_000):
+            charges_f32 = sys.charges.astype(np.float32) if np.any(sys.charges != 0.0) else None
+            sim: Any = TryteTileFullAtomSession(
+                positions_nm=sys.positions.astype(np.float32),
+                atomic_numbers=sys.names,
+                charges=charges_f32,
+                bonds=sys.bonds,
+                box_nm=sys.box_lengths,
+                mode=mode,
+                dt=dt,
+                temperature=temperature,
+                structure_metadata=meta,
+            )
+        else:
+            sim = SimulationSession(
+                sys,
+                mode=mode,
+                dt=dt,
+                temperature=temperature,
+                rcut=1.0,
+                alpha_dsf=0.25 if np.any(sys.charges != 0.0) else 0.0,
+                structure_metadata=meta,
+            )
         minimization = sim.minimize()
         record = manager.register_session(
             sim,
@@ -592,8 +703,11 @@ def create_app(dist_dir: Optional[Path] = None) -> FastAPI:
         return {
             "session_id": record.session_id,
             "title": meta.get("title", filename),
+            "format": meta.get("format", "unknown"),
+            "coords_synthesized": bool(meta.get("coords_synthesized", False)),
             "num_atoms": sys.n_atoms,
             "num_bonds": len(sys.bonds),
+            "storage_mode": metrics["storage_mode"],
             "minimization": minimization,
             "metrics": metrics,
         }

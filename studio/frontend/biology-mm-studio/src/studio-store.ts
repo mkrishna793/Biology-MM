@@ -222,7 +222,9 @@ export class BiologyMmStudioStore {
     const subStats = controller.frameStats$.subscribe((stats) => {
       const metrics = this.state.metrics;
       const reportedAtoms =
-        metrics?.storage_mode === 'symmetry-compact' && metrics.n_atoms > stats.nAtoms
+        (metrics?.storage_mode === 'symmetry-compact' ||
+          (metrics?.storage_mode === 'tryte-all-atom' && metrics.n_atoms > 250_000)) &&
+        metrics.n_atoms > stats.nAtoms
           ? metrics.n_atoms
           : stats.nAtoms;
       this.setState({
@@ -410,6 +412,7 @@ export class BiologyMmStudioStore {
 
     const preserveExternalScaffold =
       storageMode === 'symmetry-compact' ||
+      (storageMode === 'tryte-all-atom' && nAtoms > 250_000) ||
       nAtoms > BiologyMmStreamController.COMPACT_SCAFFOLD_ATOM_THRESHOLD;
     const activateOpts = { keepExternalVisible: preserveExternalScaffold, storageMode };
 
@@ -548,7 +551,7 @@ export class BiologyMmStudioStore {
     try {
       const endpoint = useSymmetry
         ? `/api/sessions/create-from-symmetry?storage_mode=${encodeURIComponent(this.state.storageMode)}`
-        : '/api/sessions/create-from-binary';
+        : `/api/sessions/create-from-binary?storage_mode=${encodeURIComponent(this.state.storageMode)}`;
       const payloadBuffer = useSymmetry ? symExtracted!.buffer : binExtracted!.buffer;
 
       const resp = await fetch(endpoint, {
@@ -633,6 +636,7 @@ export class BiologyMmStudioStore {
         mode,
         temperature: String(temp),
         dt: String(dt),
+        storage_mode: this.state.storageMode,
       });
 
       const buffer = await file.arrayBuffer();

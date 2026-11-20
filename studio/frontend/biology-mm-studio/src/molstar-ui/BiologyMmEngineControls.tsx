@@ -65,9 +65,10 @@ const SIM_MODES: ReadonlyArray<{ value: SimulationMode; label: string }> = [
 ];
 
 const STORAGE_MODES: ReadonlyArray<{ value: StorageMode; label: string }> = [
-  { value: 'auto', label: 'Auto (Ultra-Light <1 GB)' },
-  { value: 'symmetry-compact', label: 'Symmetry-Compact' },
-  { value: 'full', label: 'Full All-Atom' },
+  { value: 'auto', label: 'Auto (Ultra-Light)' },
+  { value: 'symmetry-compact', label: 'Symmetry-Compact (<50 MB)' },
+  { value: 'tryte-all-atom', label: 'Tryte 27+5 All-Atom (~2 GB)' },
+  { value: 'full', label: 'Full Float64 (Small)' },
 ];
 
 function formatCompactRamMb(ramMb: number): string {
@@ -80,6 +81,7 @@ function formatCompactStorageBadge(mode: string | undefined): string | null {
   if (!mode) return null;
   const norm = mode.toLowerCase();
   if (norm === 'symmetry-compact') return 'SYM-COMPACT';
+  if (norm === 'tryte-all-atom') return 'TRYTE-27+5';
   if (norm === 'ternary-compact') return 'TERNARY';
   if (norm === 'full' || norm === 'float64') return 'FLOAT64';
   return mode.toUpperCase();
@@ -301,7 +303,7 @@ export class BiologyMmEngineControls extends CollapsableControls<CollapsableProp
             Upload Structure File
             <input
               type="file"
-              accept=".pdb,.cif,.mmcif,.gro,.xyz,.data,.lammps"
+              accept=".pdb,.ent,.cif,.mmcif,.gro,.xyz,.data,.lammps,.lmp,.prmtop,.parm7,.inpcrd,.rst7,.psf,.crd,.cor,.mol2,.sdf,.json"
               style={{ display: 'none' }}
               disabled={snap.isBusy}
               onChange={(e: ChangeEvent<HTMLInputElement>) => {
@@ -339,7 +341,7 @@ export class BiologyMmEngineControls extends CollapsableControls<CollapsableProp
     const snap = store.getSnapshot();
     const m = snap.metrics;
     const ms = m?.multiscale ?? snap.multiscale;
-    const isCompact = m?.storage_mode === 'symmetry-compact' || m?.storage_mode === 'ternary-compact';
+    const isCompact = m?.storage_mode === 'symmetry-compact' || m?.storage_mode === 'tryte-all-atom' || m?.storage_mode === 'ternary-compact';
     const totalN = m?.n_atoms ?? snap.frameStats.nAtoms;
     const counts =
       ms?.counts && ms.counts.all_atom + ms.counts.coarse_grained + ms.counts.rigid_scaffold > 0
