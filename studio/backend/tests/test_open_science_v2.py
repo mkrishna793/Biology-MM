@@ -341,11 +341,10 @@ sys = AtomicSystem(
     positions=pset.positions_nm,
     masses=pset.masses_amu,
     charges=pset.charges_e,
-    names=pset.elements,
     box_lengths=(2.0, 2.0, 2.0),
-    units="md",
+    names=pset.elements,
 )
-session = SimulationSession(sys, temperature=300.0, dt=0.001, sigma=pset.sigma_nm, epsilon=pset.epsilon_kj_mol)
+session = SimulationSession(sys, temperature=300.0, dt=0.001)
 """
         app = create_app()
         with TestClient(app) as client:
@@ -356,6 +355,82 @@ session = SimulationSession(sys, temperature=300.0, dt=0.001, sigma=pset.sigma_n
             sid = data["session_id"]
             self.assertEqual(client.post(f"/api/sessions/{sid}/step", json={"steps": 2}).status_code, 200)
             self.assertEqual(client.get(f"/api/sessions/{sid}/export/dcd").status_code, 200)
+
+    def test_universal_disorder_filtering_and_mof_zeolite_organic_bonds(self) -> None:
+        from trium_studio.structure_loader import load_structure_from_bytes
+        from trium_studio.engine_core import SimulationSession
+
+        # 1. Disordered Zr-MOF CIF (partial-occupancy O1B sits 0.04 nm from O1A -> must be filtered!)
+        disordered_mof = """data_Disordered_MOF
+_cell_length_a 10.0
+_cell_length_b 10.0
+_cell_length_c 10.0
+_cell_angle_alpha 90.0
+_cell_angle_beta  90.0
+_cell_angle_gamma 90.0
+loop_
+_atom_site_label
+_atom_site_type_symbol
+_atom_site_occupancy
+_atom_site_fract_x
+_atom_site_fract_y
+_atom_site_fract_z
+Zr1 Zr 1.00 0.500 0.500 0.500
+O1A O  1.00 0.710 0.500 0.500
+O1B O  0.50 0.735 0.510 0.500
+C1  C  1.00 0.840 0.500 0.500
+O2  O  1.00 0.900 0.610 0.500
+"""
+        sys_mof, _ = load_structure_from_bytes(disordered_mof.encode("utf-8"), "mof.cif")
+        # O1B overlapping site must be filtered out -> 4 clean atoms instead of 5
+        self.assertEqual(sys_mof.n_atoms, 4)
+        # Zr-O (2.1 A), O-C (1.3 A), C-O (1.25 A) bonds must be inferred automatically
+        self.assertGreaterEqual(len(sys_mof.bonds), 3)
+        # Running MD must stay bounded (no clash explosion!)
+        sim = SimulationSession(sys_mof, temperature=300.0, dt=0.001)
+        sim.step(10)
+        m = sim.get_metrics()
+        self.assertTrue(math.isfinite(m["potential_energy"]))
+
+        # 2. Inorganic SiO2 / Zeolite crystal CIF
+        sio2_cif = """data_Quartz_mini
+_cell_length_a 6.0
+_cell_length_b 6.0
+_cell_length_c 6.0
+_cell_angle_alpha 90.0
+_cell_angle_beta  90.0
+_cell_angle_gamma 90.0
+loop_
+_atom_site_label
+_atom_site_type_symbol
+_atom_site_fract_x
+_atom_site_fract_y
+_atom_site_fract_z
+Si1 Si 0.500 0.500 0.500
+O1  O  0.770 0.500 0.500
+O2  O  0.230 0.500 0.500
+"""
+        sys_sio2, _ = load_structure_from_bytes(sio2_cif.encode("utf-8"), "sio2.cif")
+        self.assertGreaterEqual(len(sys_sio2.bonds), 2)
+
+        # 3. Organic chemistry .xyz molecule (water/methanol-like) -> covalent bonds auto-inferred
+        xyz_text = """4
+Formaldehyde
+C  0.000  0.000  0.000
+O  1.210  0.000  0.000
+H -0.580  0.940  0.000
+H -0.580 -0.940  0.000
+"""
+        sys_org, _ = load_structure_from_bytes(xyz_text.encode("utf-8"), "ch2o.xyz")
+        self.assertEqual(len(sys_org.bonds), 3)
+
+    def test_molstar_watermark_logo_hidden_in_studio_css(self) -> None:
+        from pathlib import Path
+        root = Path(__file__).resolve().parents[2]
+        scss = (root / "frontend" / "biology-mm-studio" / "src" / "styles" / "studio.scss").read_text(encoding="utf-8")
+        html = (root / "frontend" / "biology-mm-studio" / "index.html").read_text(encoding="utf-8")
+        self.assertIn(".msp-viewport-logo", scss)
+        self.assertIn(".msp-viewport-logo", html)
 
 if __name__ == "__main__":
     unittest.main()

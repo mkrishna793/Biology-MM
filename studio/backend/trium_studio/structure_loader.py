@@ -497,6 +497,82 @@ def parse_lammps_data_text(text: str) -> Tuple[np.ndarray, List[str], List[Tuple
     return pos_nm, elements, bonds, meta
 
 
+
+# Standard covalent radii (nm) across the periodic table (Cordero et al., Dalton Trans. 2008)
+_COVALENT_RADII_NM: Dict[str, float] = {
+    "H": 0.031, "HE": 0.028, "LI": 0.128, "BE": 0.096, "B": 0.084, "C": 0.076,
+    "N": 0.071, "O": 0.066, "F": 0.057, "NE": 0.058, "NA": 0.166, "MG": 0.141,
+    "AL": 0.121, "SI": 0.111, "P": 0.107, "S": 0.105, "CL": 0.102, "AR": 0.106,
+    "K": 0.203, "CA": 0.176, "SC": 0.170, "TI": 0.160, "V": 0.153, "CR": 0.139,
+    "MN": 0.139, "FE": 0.132, "CO": 0.126, "NI": 0.124, "CU": 0.132, "ZN": 0.122,
+    "GA": 0.122, "GE": 0.120, "AS": 0.119, "SE": 0.120, "BR": 0.120, "KR": 0.116,
+    "RB": 0.220, "SR": 0.195, "Y": 0.190, "ZR": 0.175, "NB": 0.164, "MO": 0.154,
+    "RU": 0.146, "RH": 0.142, "PD": 0.139, "AG": 0.145, "CD": 0.144, "IN": 0.142,
+    "SN": 0.139, "SB": 0.139, "TE": 0.138, "I": 0.139, "XE": 0.140, "CS": 0.244,
+    "BA": 0.215, "LA": 0.207, "CE": 0.204, "ND": 0.201, "EU": 0.198, "GD": 0.196,
+    "HF": 0.175, "TA": 0.170, "W": 0.162, "RE": 0.151, "OS": 0.144, "IR": 0.141,
+    "PT": 0.136, "AU": 0.136, "HG": 0.132, "TL": 0.145, "PB": 0.146, "BI": 0.148,
+    "TH": 0.206, "U": 0.196,
+}
+
+_NOBLE_GASES: Set[str] = {"HE", "NE", "AR", "KR", "XE"}
+_NONMETALS: Set[str] = {"H", "B", "C", "N", "O", "F", "SI", "P", "S", "CL", "AS", "SE", "BR", "TE", "I"}
+
+
+def _infer_bonds_pbc(
+    pos_nm: np.ndarray,
+    elements: Sequence[str],
+    box_nm: Optional[np.ndarray] = None,
+    max_atoms: int = 8000,
+) -> List[Tuple[int, int]]:
+    """Universal PBC-aware covalent & metal-ligand bond inference for any chemistry, MOF, or crystal."""
+    n = int(pos_nm.shape[0])
+    if n <= 1 or n > max_atoms:
+        return []
+
+    elems_u = [str(e).strip().upper() for e in elements]
+    radii = np.array([_COVALENT_RADII_NM.get(e, 0.076) for e in elems_u], dtype=np.float64)
+    is_noble = np.array([e in _NOBLE_GASES for e in elems_u], dtype=bool)
+    is_metal = np.array([(e not in _NONMETALS) and (e not in _NOBLE_GASES) for e in elems_u], dtype=bool)
+
+    H: Optional[np.ndarray] = None
+    H_inv: Optional[np.ndarray] = None
+    if box_nm is not None:
+        arr_b = np.asarray(box_nm, dtype=np.float64)
+        if arr_b.shape == (3,) and np.all(arr_b > 0):
+            H = np.diag(arr_b)
+        elif arr_b.shape == (3, 3) and abs(float(np.linalg.det(arr_b))) > 1e-12:
+            H = arr_b
+        if H is not None:
+            H_inv = np.linalg.inv(H)
+
+    bonds: List[Tuple[int, int]] = []
+    # Vectorized per-atom upper-triangle search (fast: ~5 ms for 600 atoms)
+    for i in range(n - 1):
+        if is_noble[i]:
+            continue
+        dr = pos_nm[i + 1 :] - pos_nm[i]
+        if H is not None and H_inv is not None:
+            frac = dr @ H_inv
+            frac -= np.rint(frac)
+            dr = frac @ H
+        dists = np.linalg.norm(dr, axis=1)
+        r_sum = radii[i] + radii[i + 1 :]
+        # Scale by bond chemistry: covalent (1.25), metal-ligand (1.18), metal-metal (1.05)
+        scales = np.full_like(r_sum, 1.25)
+        if is_metal[i]:
+            scales = np.where(is_metal[i + 1 :], 1.05, 1.18)
+        else:
+            scales = np.where(is_metal[i + 1 :], 1.18, 1.25)
+
+        min_cut = np.maximum(0.04, 0.45 * r_sum)
+        max_cut = scales * r_sum
+        valid = (~is_noble[i + 1 :]) & (dists >= min_cut) & (dists <= max_cut)
+        hits = np.where(valid)[0]
+        for h in hits:
+            bonds.append((i, i + 1 + int(h)))
+    return bonds
+
 def _parse_cif_float(raw: str, default: float = 0.0) -> float:
     """Parse CIF float values, stripping crystallographic uncertainty parentheses like '0.1234(5)'."""
     s = str(raw).strip().strip("'\"")
@@ -551,7 +627,7 @@ def _eval_symop_expr(expr: str, x: float, y: float, z: float) -> float:
 def _tokenize_cif_row(line: str) -> List[str]:
     """Tokenize a CIF data row respecting single/double quoted strings (e.g. '1/2-x, y, z')."""
     tokens: List[str] = []
-    for m in re.finditer(r"""'([^']*)'|"([^"]*)"|(\S+)""", line):
+    for m in re.finditer(r"'([^']*)'|\"([^\"]*)\"|(\S+)" , line):
         tok = m.group(1) if m.group(1) is not None else (m.group(2) if m.group(2) is not None else m.group(3))
         tokens.append(tok)
     return tokens
@@ -561,6 +637,7 @@ def parse_mmcif_text(text: str) -> Tuple[np.ndarray, List[str], List[Tuple[int, 
     """Parse both biological mmCIF (_atom_site.Cartn_x) and crystallographic/MOF CIF (_atom_site_fract_x)."""
     coords: List[List[float]] = []
     fract_coords: List[List[float]] = []
+    fract_occs: List[float] = []
     elements: List[str] = []
     res_names: List[str] = []
     chain_ids: List[str] = []
@@ -675,7 +752,9 @@ def parse_mmcif_text(text: str) -> Tuple[np.ndarray, List[str], List[Tuple[int, 
                     lbl = row.get("label", "C")
                     letters = "".join(c for c in lbl if c.isalpha())
                     elem = letters[:2] if letters[:2].upper() in _TWO_LETTER_ELEMENTS else letters[:1] or "C"
+                occ = _parse_cif_float(row.get("occupancy", "1.0"), 1.0)
                 fract_coords.append([fx, fy, fz])
+                fract_occs.append(occ)
                 elements.append(_clean_element(elem))
                 res_names.append(row.get("label", "CRY"))
                 chain_ids.append("A")
@@ -695,9 +774,19 @@ def parse_mmcif_text(text: str) -> Tuple[np.ndarray, List[str], List[Tuple[int, 
         exp_chains: List[str] = []
         ops_to_apply = symops if symops else [("x", "y", "z")]
 
-        # Apply space-group symmetry operations and deduplicate overlapping special positions
-        for fxyz, el, rn, ch in zip(fract_coords, elements, res_names, chain_ids):
-            fx0, fy0, fz0 = fxyz
+        # Sort by descending occupancy so full-occupancy framework sites win over disordered alternate sites
+        order = sorted(range(len(fract_coords)), key=lambda idx: -fract_occs[idx])
+        exp_cart: List[np.ndarray] = []
+        exp_radii: List[float] = []
+        filtered_disorder = 0
+
+        for idx_site in order:
+            fx0, fy0, fz0 = fract_coords[idx_site]
+            el = elements[idx_site]
+            rn = res_names[idx_site]
+            ch = chain_ids[idx_site]
+            r_new = _COVALENT_RADII_NM.get(el.upper(), 0.076)
+
             for ox, oy, oz in ops_to_apply:
                 try:
                     nx = _eval_symop_expr(ox, fx0, fy0, fz0) % 1.0
@@ -705,37 +794,54 @@ def parse_mmcif_text(text: str) -> Tuple[np.ndarray, List[str], List[Tuple[int, 
                     nz = _eval_symop_expr(oz, fx0, fy0, fz0) % 1.0
                 except Exception:
                     continue
-                # Deduplicate in fractional space (accounting for periodic wrap around 0/1)
-                is_dup = False
-                for ex, ey, ez in exp_frac:
-                    dx = (nx - ex + 0.5) % 1.0 - 0.5
-                    dy = (ny - ey + 0.5) % 1.0 - 0.5
-                    dz = (nz - ez + 0.5) % 1.0 - 0.5
-                    if dx * dx + dy * dy + dz * dz < 1e-5:
-                        is_dup = True
-                        break
-                if not is_dup:
+
+                cand_frac = np.array([nx, ny, nz], dtype=np.float64)
+                # Deduplicate special positions AND filter overlapping disordered alternate sites via PBC distance
+                is_overlap = False
+                if exp_frac:
+                    prev_f = np.asarray(exp_frac, dtype=np.float64)
+                    df = cand_frac[None, :] - prev_f
+                    df -= np.rint(df)
+                    d_cart = np.linalg.norm(df @ H, axis=1)
+                    # Physical clash floor: no two real atoms sit closer than 0.55 * (r_i + r_j)
+                    min_allowed = np.maximum(0.055, 0.55 * (r_new + np.asarray(exp_radii, dtype=np.float64)))
+                    if np.any(d_cart < min_allowed):
+                        is_overlap = True
+                        if np.all(d_cart >= 0.005):
+                            filtered_disorder += 1
+                if not is_overlap:
                     exp_frac.append([nx, ny, nz])
+                    exp_cart.append(cand_frac @ H)
+                    exp_radii.append(r_new)
                     exp_elems.append(el)
                     exp_res.append(rn)
                     exp_chains.append(ch)
 
-        pos_nm = np.asarray(exp_frac, dtype=np.float64) @ H
+        pos_nm = np.asarray(exp_cart, dtype=np.float64) if exp_cart else np.zeros((0, 3), dtype=np.float64)
         elements = exp_elems
         res_names = exp_res
         chain_ids = exp_chains
+        inferred_bonds = _infer_bonds_pbc(pos_nm, elements, box_nm=H)
     else:
         pos_nm = np.asarray(coords, dtype=np.float64)
+        filtered_disorder = 0
+        inferred_bonds = []
 
     meta: Dict[str, Any] = {
         "res_names": res_names,
         "chain_ids": chain_ids,
         "crystallographic": bool(fract_coords and not coords),
         "n_symops": len(symops),
+        "filtered_disordered_sites": filtered_disorder,
     }
     if box_nm is not None:
         meta["box_nm"] = box_nm
-    return pos_nm, elements, [], meta
+        meta["explicit_box_nm"] = (
+            float(np.linalg.norm(box_nm[0])),
+            float(np.linalg.norm(box_nm[1])),
+            float(np.linalg.norm(box_nm[2])),
+        )
+    return pos_nm, elements, inferred_bonds, meta
 
 
 def parse_amber_prmtop_text(
@@ -1573,20 +1679,26 @@ def _finalize_atomic_system(
     if n == 0:
         raise ValueError(f"No valid atoms parsed from {filename}")
 
-    margin = 0.9  # 9 Angstroms uniform margin inside simulation box
-    min_xyz = np.min(pos_nm, axis=0)
-    pos_shifted = pos_nm - min_xyz
-    span = np.ptp(pos_shifted, axis=0) if n > 1 else np.zeros(3, dtype=np.float64)
     bx, by, bz = 0.0, 0.0, 0.0
     if meta.get("explicit_box_nm") and len(meta["explicit_box_nm"]) == 3:
         bx, by, bz = (max(0.0, float(v)) for v in meta["explicit_box_nm"])
-    box_nm = (
-        max(bx, float(span[0]) + 2 * margin, 2.8),
-        max(by, float(span[1]) + 2 * margin, 2.8),
-        max(bz, float(span[2]) + 2 * margin, 2.8),
-    )
-    offset = 0.5 * (np.array(box_nm) - span)
-    pos_nm_centered = pos_shifted + offset
+
+    if meta.get("crystallographic") and bx > 0.0 and by > 0.0 and bz > 0.0:
+        # Preserve exact crystallographic periodic unit cell with zero artificial vacuum padding
+        box_nm = (bx, by, bz)
+        pos_nm_centered = np.mod(pos_nm, np.array(box_nm, dtype=np.float64)[None, :])
+    else:
+        margin = 0.9  # 9 Angstroms uniform margin inside simulation box
+        min_xyz = np.min(pos_nm, axis=0)
+        pos_shifted = pos_nm - min_xyz
+        span = np.ptp(pos_shifted, axis=0) if n > 1 else np.zeros(3, dtype=np.float64)
+        box_nm = (
+            max(bx, float(span[0]) + 2 * margin, 2.8),
+            max(by, float(span[1]) + 2 * margin, 2.8),
+            max(bz, float(span[2]) + 2 * margin, 2.8),
+        )
+        offset = 0.5 * (np.array(box_nm) - span)
+        pos_nm_centered = pos_shifted + offset
 
     raw_masses = meta.get("masses")
     if raw_masses is not None and len(raw_masses) == n:
@@ -1606,6 +1718,8 @@ def _finalize_atomic_system(
     else:
         charges = np.zeros(n, dtype=np.float64)
 
+    if not bonds and 1 < len(elements) <= 8000 and fmt in ("cif", "xyz", "pdb", "gro"):
+        bonds = _infer_bonds_pbc(pos_nm, elements, box_nm=np.diag(box_nm))
     sys = AtomicSystem(
         positions=pos_nm_centered,
         masses=masses,
@@ -1622,12 +1736,14 @@ def _finalize_atomic_system(
         "num_atoms": n,
         "num_bonds": len(bonds),
         "box_ang": [box_nm[0] * 10.0, box_nm[1] * 10.0, box_nm[2] * 10.0],
+        "crystallographic": bool(meta.get("crystallographic", False)),
+        "n_symops": int(meta.get("n_symops", 0)),
         "res_names": meta.get("res_names"),
         "chain_ids": meta.get("chain_ids"),
         "atom_names": meta.get("atom_names"),
         "coords_synthesized": bool(meta.get("coords_synthesized", False)),
     }
-    for extra_key in ("family", "schema", "fixture", "crystallographic"):
+    for extra_key in ("family", "schema", "fixture"):
         if meta.get(extra_key) is not None:
             structure_metadata[extra_key] = meta[extra_key]
 
