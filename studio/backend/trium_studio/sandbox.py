@@ -25,6 +25,7 @@ ALLOWED_ROOT_MODULES: Set[str] = {
 ALLOWED_TRIUM_SUBMODULES: Set[str] = {
     "trium_studio.engine_core",
     "trium_studio.presets",
+    "trium_studio.structure_loader",
 }
 
 BLOCKED_BUILTINS: Set[str] = {

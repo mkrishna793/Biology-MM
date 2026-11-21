@@ -31,35 +31,19 @@ from biology_mm import AtomicSystem
 AMBER_CHARGE_SCALE = 18.2223
 
 _ELEMENT_MASSES: Dict[str, float] = {
-    "H": 1.008,
-    "HE": 4.003,
-    "LI": 6.941,
-    "BE": 9.012,
-    "B": 10.81,
-    "C": 12.011,
-    "N": 14.007,
-    "O": 15.999,
-    "F": 18.998,
-    "NE": 20.180,
-    "NA": 22.990,
-    "MG": 24.305,
-    "AL": 26.982,
-    "SI": 28.086,
-    "P": 30.974,
-    "S": 32.065,
-    "CL": 35.453,
-    "AR": 39.948,
-    "K": 39.098,
-    "CA": 40.078,
-    "MN": 54.938,
-    "FE": 55.845,
-    "CO": 58.933,
-    "NI": 58.693,
-    "CU": 63.546,
-    "ZN": 65.38,
-    "SE": 78.971,
-    "BR": 79.904,
-    "I": 126.90,
+    "H": 1.008, "HE": 4.003, "LI": 6.941, "BE": 9.012, "B": 10.81, "C": 12.011,
+    "N": 14.007, "O": 15.999, "F": 18.998, "NE": 20.180, "NA": 22.990, "MG": 24.305,
+    "AL": 26.982, "SI": 28.086, "P": 30.974, "S": 32.065, "CL": 35.453, "AR": 39.948,
+    "K": 39.098, "CA": 40.078, "SC": 44.956, "TI": 47.867, "V": 50.942, "CR": 51.996,
+    "MN": 54.938, "FE": 55.845, "CO": 58.933, "NI": 58.693, "CU": 63.546, "ZN": 65.38,
+    "GA": 69.723, "GE": 72.630, "AS": 74.922, "SE": 78.971, "BR": 79.904, "KR": 83.798,
+    "RB": 85.468, "SR": 87.62, "Y": 88.906, "ZR": 91.224, "NB": 92.906, "MO": 95.95,
+    "RU": 101.07, "RH": 102.91, "PD": 106.42, "AG": 107.87, "CD": 112.41, "IN": 114.82,
+    "SN": 118.71, "SB": 121.76, "TE": 127.60, "I": 126.90, "XE": 131.29, "CS": 132.91,
+    "BA": 137.33, "LA": 138.91, "CE": 140.12, "ND": 144.24, "EU": 151.96, "GD": 157.25,
+    "HF": 178.49, "TA": 180.95, "W": 183.84, "RE": 186.21, "OS": 190.23, "IR": 192.22,
+    "PT": 195.08, "AU": 196.97, "HG": 200.59, "TL": 204.38, "PB": 207.2, "BI": 208.98,
+    "TH": 232.04, "U": 238.03,
 }
 
 _Z_TO_ELEMENT: Dict[int, str] = {
@@ -94,10 +78,7 @@ _Z_TO_ELEMENT: Dict[int, str] = {
     53: "I",
 }
 
-_TWO_LETTER_ELEMENTS: Set[str] = {
-    "HE", "LI", "BE", "NE", "NA", "MG", "AL", "SI", "CL", "AR",
-    "CA", "MN", "FE", "CO", "NI", "CU", "ZN", "SE", "BR",
-}
+_TWO_LETTER_ELEMENTS: Set[str] = {k for k in _ELEMENT_MASSES if len(k) == 2}
 
 _MASS_TABLE: List[Tuple[float, str]] = [
     (m, sym[0].upper() + sym[1:].lower()) for sym, m in _ELEMENT_MASSES.items()
@@ -516,65 +497,244 @@ def parse_lammps_data_text(text: str) -> Tuple[np.ndarray, List[str], List[Tuple
     return pos_nm, elements, bonds, meta
 
 
+def _parse_cif_float(raw: str, default: float = 0.0) -> float:
+    """Parse CIF float values, stripping crystallographic uncertainty parentheses like '0.1234(5)'."""
+    s = str(raw).strip().strip("'\"")
+    if not s or s in (".", "?"):
+        return default
+    if "(" in s:
+        s = s.split("(", 1)[0]
+    return float(s)
+
+
+def _cell_params_to_matrix_nm(a: float, b: float, c: float, alpha: float, beta: float, gamma: float) -> np.ndarray:
+    """Convert crystallographic cell parameters (Angstrom, degrees) to 3x3 row-vector matrix (nm)."""
+    ar, br, gr = math.radians(alpha), math.radians(beta), math.radians(gamma)
+    ca, cb, cg = math.cos(ar), math.cos(br), math.cos(gr)
+    sg = math.sqrt(max(1e-12, 1.0 - cg * cg))
+    ax, ay, az = a, 0.0, 0.0
+    bx, by, bz = b * cg, b * sg, 0.0
+    cx = c * cb
+    cy = c * (ca - cb * cg) / sg
+    cz = math.sqrt(max(0.0, c * c - cx * cx - cy * cy))
+    return np.array([[ax, ay, az], [bx, by, bz], [cx, cy, cz]], dtype=np.float64) * 0.1
+
+
+def _eval_symop_expr(expr: str, x: float, y: float, z: float) -> float:
+    """Safely evaluate one linear CIF symmetry component such as '1/2-x+y' without eval()."""
+    s = expr.replace(" ", "").lower()
+    if not s:
+        return 0.0
+    # Split into signed terms
+    terms = re.findall(r"[+-]?[^+-]+", s)
+    total = 0.0
+    for term in terms:
+        sign = -1.0 if term.startswith("-") else 1.0
+        body = term.lstrip("+-")
+        if body in ("x", "y", "z"):
+            total += sign * (x if body == "x" else y if body == "y" else z)
+        elif "/" in body:
+            num_s, den_s = body.split("/", 1)
+            total += sign * (float(num_s) / float(den_s))
+        else:
+            # Handle optional coefficient like 2x
+            m = re.match(r"^([0-9.]+)\*?([xyz])$", body)
+            if m:
+                coef = float(m.group(1))
+                var = m.group(2)
+                total += sign * coef * (x if var == "x" else y if var == "y" else z)
+            else:
+                total += sign * float(body)
+    return total
+
+
+def _tokenize_cif_row(line: str) -> List[str]:
+    """Tokenize a CIF data row respecting single/double quoted strings (e.g. '1/2-x, y, z')."""
+    tokens: List[str] = []
+    for m in re.finditer(r"""'([^']*)'|"([^"]*)"|(\S+)""", line):
+        tok = m.group(1) if m.group(1) is not None else (m.group(2) if m.group(2) is not None else m.group(3))
+        tokens.append(tok)
+    return tokens
+
+
 def parse_mmcif_text(text: str) -> Tuple[np.ndarray, List[str], List[Tuple[int, int]], Dict[str, Any]]:
+    """Parse both biological mmCIF (_atom_site.Cartn_x) and crystallographic/MOF CIF (_atom_site_fract_x)."""
     coords: List[List[float]] = []
+    fract_coords: List[List[float]] = []
     elements: List[str] = []
-    atom_id_map: Dict[str, int] = {}
     res_names: List[str] = []
     chain_ids: List[str] = []
+    symops: List[Tuple[str, str, str]] = []
+
+    cell_vals: Dict[str, float] = {
+        "a": 0.0, "b": 0.0, "c": 0.0, "alpha": 90.0, "beta": 90.0, "gamma": 90.0
+    }
 
     lines = text.splitlines()
-    in_atom_site_loop = False
-    atom_site_cols: List[str] = []
+    mode: Optional[str] = None  # "atom_site" | "symop" | None
+    loop_cols: List[str] = []
 
     for line in lines:
         stripped = line.strip()
-        if not stripped:
+        if not stripped or stripped.startswith("#"):
             continue
-        if stripped.startswith("#") or stripped.startswith("data_") or stripped.startswith(";"):
-            in_atom_site_loop = False
+        if stripped.startswith("data_") or stripped.startswith(";"):
+            mode = None
+            loop_cols = []
             continue
+
+        # Scalar cell tags (both crystallographic _cell_length_a and mmCIF _cell.length_a)
+        for tag, key in (
+            ("_cell_length_a", "a"), ("_cell.length_a", "a"),
+            ("_cell_length_b", "b"), ("_cell.length_b", "b"),
+            ("_cell_length_c", "c"), ("_cell.length_c", "c"),
+            ("_cell_angle_alpha", "alpha"), ("_cell.angle_alpha", "alpha"),
+            ("_cell_angle_beta", "beta"), ("_cell.angle_beta", "beta"),
+            ("_cell_angle_gamma", "gamma"), ("_cell.angle_gamma", "gamma"),
+        ):
+            if stripped.startswith(tag) and len(stripped.split()) >= 2:
+                try:
+                    cell_vals[key] = _parse_cif_float(stripped.split()[1], cell_vals[key])
+                except ValueError:
+                    pass
 
         if stripped.startswith("loop_"):
-            in_atom_site_loop = False
-            atom_site_cols = []
+            mode = None
+            loop_cols = []
             continue
 
-        if stripped.startswith("_atom_site."):
-            in_atom_site_loop = True
-            atom_site_cols.append(stripped.split()[0].replace("_atom_site.", ""))
+        if stripped.startswith("_atom_site.") or stripped.startswith("_atom_site_"):
+            mode = "atom_site"
+            col = stripped.split()[0]
+            col = col.replace("_atom_site.", "").replace("_atom_site_", "")
+            loop_cols.append(col)
             continue
 
-        if in_atom_site_loop:
-            if stripped.startswith("_"):
-                in_atom_site_loop = False
+        if stripped.startswith(("_symmetry_equiv_pos_as_xyz", "_space_group_symop_operation_xyz", "_space_group_symop.operation_xyz", "_symmetry_equiv_pos_site_id", "_space_group_symop_id")):
+            mode = "symop"
+            loop_cols.append(stripped.split()[0])
+            continue
+
+        if stripped.startswith("_"):
+            mode = None
+            loop_cols = []
+            continue
+
+        if mode == "symop":
+            parts = _tokenize_cif_row(stripped)
+            xyz_col = None
+            for idx_c, cname in enumerate(loop_cols):
+                if "xyz" in cname:
+                    xyz_col = idx_c
+                    break
+            if xyz_col is not None and len(parts) > xyz_col:
+                op_str = parts[xyz_col]
+                comps = [c.strip() for c in op_str.split(",")]
+                if len(comps) == 3:
+                    symops.append((comps[0], comps[1], comps[2]))
+            continue
+
+        if mode == "atom_site":
+            parts = _tokenize_cif_row(stripped)
+            if len(parts) < len(loop_cols) or len(loop_cols) < 4:
+                continue
+            row = dict(zip(loop_cols, parts[: len(loop_cols)]))
+
+            # Biological mmCIF Cartesian path
+            if "Cartn_x" in row and "Cartn_y" in row and "Cartn_z" in row:
+                group = row.get("group_PDB", "ATOM")
+                if group not in ("ATOM", "HETATM"):
+                    continue
+                try:
+                    x = _parse_cif_float(row["Cartn_x"]) * 0.1
+                    y = _parse_cif_float(row["Cartn_y"]) * 0.1
+                    z = _parse_cif_float(row["Cartn_z"]) * 0.1
+                except ValueError:
+                    continue
+                elem = row.get("type_symbol", "")
+                if not elem or elem in (".", "?"):
+                    atom_lbl = row.get("label_atom_id", row.get("auth_atom_id", "C"))
+                    letters = "".join(c for c in atom_lbl if c.isalpha())
+                    elem = letters[:2] if letters[:2].upper() in _TWO_LETTER_ELEMENTS else letters[:1] or "C"
+                coords.append([x, y, z])
+                elements.append(_clean_element(elem))
+                res_names.append(row.get("label_comp_id", "UNK"))
+                chain_ids.append(row.get("label_asym_id", "A"))
                 continue
 
-            parts = [tok.strip("'\"") for tok in stripped.split()]
-            if len(parts) >= len(atom_site_cols) and len(atom_site_cols) >= 6:
-                row = dict(zip(atom_site_cols, parts[: len(atom_site_cols)]))
-                group = row.get("group_PDB", "ATOM")
-                if group in ("ATOM", "HETATM"):
-                    try:
-                        x = float(row.get("Cartn_x", "0")) * 0.1
-                        y = float(row.get("Cartn_y", "0")) * 0.1
-                        z = float(row.get("Cartn_z", "0")) * 0.1
-                    except ValueError:
-                        continue
-                    elem = row.get("type_symbol", "")
-                    if not elem or elem in (".", "?"):
-                        atom_lbl = row.get("label_atom_id", row.get("auth_atom_id", "C"))
-                        elem = "".join(c for c in atom_lbl if c.isalpha())[:1] or "C"
-                    aid = row.get("id", str(len(coords) + 1))
-                    idx = len(coords)
-                    atom_id_map[aid] = idx
-                    coords.append([x, y, z])
-                    elements.append(_clean_element(elem))
-                    res_names.append(row.get("label_comp_id", "UNK"))
-                    chain_ids.append(row.get("label_asym_id", "A"))
+            # Crystallographic / MOF CIF fractional coordinate path (_atom_site_fract_x/y/z)
+            if "fract_x" in row and "fract_y" in row and "fract_z" in row:
+                try:
+                    fx = _parse_cif_float(row["fract_x"])
+                    fy = _parse_cif_float(row["fract_y"])
+                    fz = _parse_cif_float(row["fract_z"])
+                except ValueError:
+                    continue
+                elem = row.get("type_symbol", "")
+                if not elem or elem in (".", "?"):
+                    lbl = row.get("label", "C")
+                    letters = "".join(c for c in lbl if c.isalpha())
+                    elem = letters[:2] if letters[:2].upper() in _TWO_LETTER_ELEMENTS else letters[:1] or "C"
+                fract_coords.append([fx, fy, fz])
+                elements.append(_clean_element(elem))
+                res_names.append(row.get("label", "CRY"))
+                chain_ids.append("A")
 
-    pos_nm = np.asarray(coords, dtype=np.float64)
-    meta = {"res_names": res_names, "chain_ids": chain_ids}
+    box_nm: Optional[np.ndarray] = None
+    if cell_vals["a"] > 0 and cell_vals["b"] > 0 and cell_vals["c"] > 0:
+        box_nm = _cell_params_to_matrix_nm(
+            cell_vals["a"], cell_vals["b"], cell_vals["c"],
+            cell_vals["alpha"], cell_vals["beta"], cell_vals["gamma"],
+        )
+
+    if fract_coords and not coords:
+        H = box_nm if box_nm is not None else np.eye(3, dtype=np.float64)
+        exp_frac: List[List[float]] = []
+        exp_elems: List[str] = []
+        exp_res: List[str] = []
+        exp_chains: List[str] = []
+        ops_to_apply = symops if symops else [("x", "y", "z")]
+
+        # Apply space-group symmetry operations and deduplicate overlapping special positions
+        for fxyz, el, rn, ch in zip(fract_coords, elements, res_names, chain_ids):
+            fx0, fy0, fz0 = fxyz
+            for ox, oy, oz in ops_to_apply:
+                try:
+                    nx = _eval_symop_expr(ox, fx0, fy0, fz0) % 1.0
+                    ny = _eval_symop_expr(oy, fx0, fy0, fz0) % 1.0
+                    nz = _eval_symop_expr(oz, fx0, fy0, fz0) % 1.0
+                except Exception:
+                    continue
+                # Deduplicate in fractional space (accounting for periodic wrap around 0/1)
+                is_dup = False
+                for ex, ey, ez in exp_frac:
+                    dx = (nx - ex + 0.5) % 1.0 - 0.5
+                    dy = (ny - ey + 0.5) % 1.0 - 0.5
+                    dz = (nz - ez + 0.5) % 1.0 - 0.5
+                    if dx * dx + dy * dy + dz * dz < 1e-5:
+                        is_dup = True
+                        break
+                if not is_dup:
+                    exp_frac.append([nx, ny, nz])
+                    exp_elems.append(el)
+                    exp_res.append(rn)
+                    exp_chains.append(ch)
+
+        pos_nm = np.asarray(exp_frac, dtype=np.float64) @ H
+        elements = exp_elems
+        res_names = exp_res
+        chain_ids = exp_chains
+    else:
+        pos_nm = np.asarray(coords, dtype=np.float64)
+
+    meta: Dict[str, Any] = {
+        "res_names": res_names,
+        "chain_ids": chain_ids,
+        "crystallographic": bool(fract_coords and not coords),
+        "n_symops": len(symops),
+    }
+    if box_nm is not None:
+        meta["box_nm"] = box_nm
     return pos_nm, elements, [], meta
 
 
@@ -1467,7 +1627,7 @@ def _finalize_atomic_system(
         "atom_names": meta.get("atom_names"),
         "coords_synthesized": bool(meta.get("coords_synthesized", False)),
     }
-    for extra_key in ("family", "schema", "fixture"):
+    for extra_key in ("family", "schema", "fixture", "crystallographic"):
         if meta.get(extra_key) is not None:
             structure_metadata[extra_key] = meta[extra_key]
 

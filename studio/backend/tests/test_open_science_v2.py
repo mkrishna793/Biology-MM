@@ -271,5 +271,91 @@ class TestMultiDomainCustomPhysicsAndStudioAPI(unittest.TestCase):
                     200,
                 )
 
+    def test_uio66_crystallographic_cif_upload_and_simulation(self) -> None:
+        uio66_cif = """data_UiO-66_mini
+_cell_length_a   20.7004(5)
+_cell_length_b   20.7004(5)
+_cell_length_c   20.7004(5)
+_cell_angle_alpha 90.0
+_cell_angle_beta  90.0
+_cell_angle_gamma 90.0
+loop_
+_symmetry_equiv_pos_as_xyz
+'x, y, z'
+'-x, -y, z'
+'-x, y, -z'
+'x, -y, -z'
+loop_
+_atom_site_label
+_atom_site_type_symbol
+_atom_site_fract_x
+_atom_site_fract_y
+_atom_site_fract_z
+Zr1 Zr 0.1200(2) 0.0000 0.0000
+O1  O  0.0560(3) 0.0560 0.0560
+C1  C  0.1550(4) 0.1550 0.0000
+H1  H  0.2050(5) 0.1550 0.0000
+"""
+        from trium_studio.structure_loader import load_structure_from_bytes
+
+        sys_obj, meta = load_structure_from_bytes(uio66_cif.encode("utf-8"), "UiO-66.cif")
+        self.assertTrue(meta.get("crystallographic"))
+        self.assertGreaterEqual(sys_obj.n_atoms, 10)
+        # Verify real Zirconium atomic mass (~91.224 amu) is preserved
+        zr_idx = [i for i, e in enumerate(sys_obj.names) if str(e).upper().startswith("ZR")]
+        self.assertGreater(len(zr_idx), 0)
+        self.assertAlmostEqual(float(sys_obj.masses[zr_idx[0]]), 91.224, places=2)
+
+        # Verify OpenFF/UFF parameterizer assigns real Zr parameters
+        pset = parameterize_openff_sage(sys_obj.positions, elements=["Zr", "O", "C", "H"] + ["C"] * (sys_obj.n_atoms - 4))
+        self.assertAlmostEqual(float(pset.masses_amu[0]), 91.224, places=2)
+
+        # Verify end-to-end upload, live MD step, and .dcd/.xtc export via Studio API
+        app = create_app()
+        with TestClient(app) as client:
+            up = client.post(
+                "/api/sessions/upload?storage_mode=tryte-all-atom&temperature=300",
+                files={"file": ("UiO-66.cif", uio66_cif.encode("utf-8"), "chemical/x-cif")},
+            )
+            self.assertEqual(up.status_code, 200, up.text)
+            sid = up.json()["session_id"]
+            self.assertEqual(client.post(f"/api/sessions/{sid}/step", json={"steps": 2}).status_code, 200)
+            self.assertEqual(client.get(f"/api/sessions/{sid}/export/dcd").status_code, 200)
+            self.assertEqual(client.get(f"/api/sessions/{sid}/export/xtc").status_code, 200)
+
+    def test_code_lab_live_custom_drug_and_material_script(self) -> None:
+        code = """
+import numpy as np
+from biology_mm import AtomicSystem, parameterize_openff_sage
+from trium_studio.engine_core import SimulationSession
+
+# Build a custom Zr-O-C hybrid material / drug cluster directly in Code Lab
+pos = np.array([
+    [0.50, 0.50, 0.50],
+    [0.71, 0.50, 0.50],
+    [0.84, 0.50, 0.50],
+    [0.92, 0.58, 0.50],
+], dtype=np.float64)
+pset = parameterize_openff_sage(pos, elements=["Zr", "O", "C", "H"])
+sys = AtomicSystem(
+    positions=pset.positions_nm,
+    masses=pset.masses_amu,
+    charges=pset.charges_e,
+    names=pset.elements,
+    box_lengths=(2.0, 2.0, 2.0),
+    units="md",
+)
+session = SimulationSession(sys, temperature=300.0, dt=0.001, sigma=pset.sigma_nm, epsilon=pset.epsilon_kj_mol)
+"""
+        app = create_app()
+        with TestClient(app) as client:
+            resp = client.post("/api/code/run", json={"code": code})
+            self.assertEqual(resp.status_code, 200, resp.text)
+            data = resp.json()
+            self.assertTrue(data.get("ok"), data)
+            sid = data["session_id"]
+            self.assertEqual(client.post(f"/api/sessions/{sid}/step", json={"steps": 2}).status_code, 200)
+            self.assertEqual(client.get(f"/api/sessions/{sid}/export/dcd").status_code, 200)
+
 if __name__ == "__main__":
     unittest.main()
