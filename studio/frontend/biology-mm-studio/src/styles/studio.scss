@@ -1017,3 +1017,15 @@ body,
   color: #1e6b3a;
   font-weight: 700;
 }
+
+
+/* Hide Mol* corner watermark logo inside Biology-MM Studio (MIT-licensed Mol*) */
+.msp-viewport .msp-logo,
+.msp-viewport-logo,
+.msp-plugin .msp-logo,
+.msp-viewport-controls .msp-logo,
+.msp-canvas-container .msp-logo {
+  display: none !important;
+  visibility: hidden !important;
+  pointer-events: none !important;
+}
