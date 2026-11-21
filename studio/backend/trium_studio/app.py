@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import io
 import re
 import socket
 import urllib.error
@@ -19,7 +20,15 @@ from fastapi.responses import JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from biology_mm import AtomicSystem, probe_hardware
+from biology_mm import (
+    AtomicSystem,
+    PLUMEDParser,
+    discover_open_prep_tools,
+    probe_hardware,
+    write_dcd,
+    write_pdb_topology,
+    write_xtc,
+)
 
 from .cif_builder import build_mmcif_from_session
 from .engine_core import (
@@ -44,7 +53,7 @@ from .sandbox import execute_user_code
 from .structure_loader import load_structure_from_bytes, load_structure_pair_from_bytes
 from .ws_manager import PALETTE_NAMES, ManagedSession, SessionManager
 
-STUDIO_VERSION = "1.0.0"
+STUDIO_VERSION = "2.0.0"
 _DIST_CANDIDATES = [
     Path(__file__).resolve().parents[2] / "molstar" / "apps" / "biology-mm-studio" / "dist",
     Path(__file__).resolve().parents[1] / "frontend" / "biology-mm-studio" / "dist",
@@ -122,6 +131,24 @@ class MultiscalePayload(BaseModel):
     center_ang: List[float]
     aa_radius_ang: float = Field(15.0, ge=0.0)
     cg_radius_ang: float = Field(35.0, ge=0.0)
+
+
+class EnhancedSamplingPayload(BaseModel):
+    plumed_text: str = Field(..., min_length=3)
+    one_based: bool = True
+    temperature_K: float = Field(300.0, gt=0.0)
+
+
+class PhysicsParamsPayload(BaseModel):
+    temperature: Optional[float] = Field(None, ge=0.0)
+    dt: Optional[float] = Field(None, gt=0.0, le=0.05)
+    rcut: Optional[float] = Field(None, gt=0.1, le=5.0)
+    efield_z: Optional[float] = None
+    gcmc_mu: Optional[float] = None
+    strain_rate: Optional[float] = None
+    sigma_scale: Optional[float] = Field(None, gt=0.1, le=5.0)
+    epsilon_scale: Optional[float] = Field(None, ge=0.0, le=10.0)
+    charge_scale: Optional[float] = Field(None, ge=0.0, le=10.0)
 
 
 class SteerAtomPayload(BaseModel):
@@ -291,6 +318,12 @@ def create_app(dist_dir: Optional[Path] = None) -> FastAPI:
             "supports_symmetry_compact": True,
             "supports_base243_ternary": True,
             "supports_tryte_27_plus_5": True,
+            "supports_dcd_export": True,
+            "supports_xtc_export": True,
+            "supports_pdb_export": True,
+            "supports_enhanced_sampling": True,
+            "supports_openff_bridge": True,
+            "open_prep_tools": discover_open_prep_tools(),
             "storage_mode": "symmetry-compact",
             "ram_mb": round(total_ram_mb, 4),
         }
@@ -950,6 +983,184 @@ def create_app(dist_dir: Optional[Path] = None) -> FastAPI:
             media_type="chemical/x-cif",
             headers={"Content-Disposition": f'attachment; filename="{sid}.cif"'},
         )
+
+    def _extract_trajectory_frames(sim: Any) -> Tuple[np.ndarray, Optional[np.ndarray], np.ndarray, np.ndarray, float, List[str]]:
+        """Extract recorded trajectory frames across Standard, CompactSymmetry, and TryteTile sessions."""
+        with sim._lock:
+            n_real = int(getattr(sim, "n_real", 0))
+            dt_ps = float(getattr(sim, "dt", 0.002))
+            default_box = getattr(sim, "box_H", None)
+            raw_names = getattr(sim, "atom_names", None)
+            history = getattr(sim, "_history", None)
+
+            if history and len(history) > 0:
+                snaps = list(history.values())
+                frame_list: List[np.ndarray] = []
+                box_list: List[np.ndarray] = []
+                step_list: List[int] = []
+                time_list: List[float] = []
+                for s in snaps:
+                    if hasattr(s, "positions") and s.positions is not None:
+                        arr = np.asarray(s.positions[:n_real] if n_real > 0 else s.positions, dtype=np.float64)
+                    elif hasattr(s, "positions_f32") and s.positions_f32 is not None:
+                        arr = np.asarray(s.positions_f32, dtype=np.float64)
+                    else:
+                        continue
+                    if arr.ndim != 2 or arr.shape[1] != 3 or arr.shape[0] == 0:
+                        continue
+                    frame_list.append(arr)
+                    b = getattr(s, "box_H", None)
+                    if b is None:
+                        b = default_box
+                    box_list.append(np.asarray(b, dtype=np.float64) if b is not None else np.zeros((3, 3), dtype=np.float64))
+                    step_list.append(int(getattr(s, "step", 0)))
+                    time_list.append(float(getattr(s, "time_ps", 0.0)))
+
+                if frame_list:
+                    # Keep frames matching the latest active atom count (handles dynamic Focus Zone resizing)
+                    target_n = frame_list[-1].shape[0]
+                    keep_idx = [i for i, f in enumerate(frame_list) if f.shape[0] == target_n]
+                    frames = np.stack([frame_list[i] for i in keep_idx], axis=0)
+                    boxes_raw = [box_list[i] for i in keep_idx]
+                    boxes = np.stack(boxes_raw, axis=0) if any(np.linalg.norm(b) > 0 for b in boxes_raw) else None
+                    steps = np.asarray([step_list[i] for i in keep_idx], dtype=np.int64)
+                    times = np.asarray([time_list[i] for i in keep_idx], dtype=np.float64)
+                    if raw_names is not None and len(raw_names) >= target_n:
+                        elems = [str(x) for x in raw_names[:target_n]]
+                    else:
+                        elems = ["C"] * target_n
+                    return frames, boxes, steps, times, dt_ps, elems
+
+            # Fallback for sessions without recorded history snapshots
+            if hasattr(sim, "get_positions_ang"):
+                pos_nm = np.asarray(sim.get_positions_ang(), dtype=np.float64) * 0.1
+            elif hasattr(sim, "positions"):
+                pos_nm = np.asarray(sim.positions[:n_real] if n_real > 0 else sim.positions, dtype=np.float64)
+            elif hasattr(sim, "_positions_f32"):
+                pos_nm = np.asarray(sim._positions_f32, dtype=np.float64)
+            else:
+                raise HTTPException(status_code=400, detail="Session does not expose atomic coordinates for trajectory export")
+            box_arr = None if default_box is None else np.asarray(default_box, dtype=np.float64)[np.newaxis, :, :]
+            step_i = int(getattr(sim, "step_count", 0))
+            time_i = float(getattr(sim, "time_ps", step_i * dt_ps))
+            target_n = pos_nm.shape[0]
+            elems = [str(x) for x in raw_names[:target_n]] if (raw_names is not None and len(raw_names) >= target_n) else ["C"] * target_n
+            return (
+                pos_nm[np.newaxis, :, :],
+                box_arr,
+                np.asarray([step_i], dtype=np.int64),
+                np.asarray([time_i], dtype=np.float64),
+                dt_ps,
+                elems,
+            )
+
+    @application.get("/api/sessions/{sid}/export/dcd")
+    async def get_export_dcd(sid: str) -> Response:
+        record = _require_session(manager, sid)
+        frames, boxes, _steps, _times, dt_ps, _elems = _extract_trajectory_frames(record.session)
+        buf = io.BytesIO()
+        write_dcd(buf, frames, boxes=boxes, dt_ps=dt_ps, units="nm")
+        return Response(
+            content=buf.getvalue(),
+            media_type="application/octet-stream",
+            headers={"Content-Disposition": f'attachment; filename="biology-mm-{sid}.dcd"'},
+        )
+
+    @application.get("/api/sessions/{sid}/export/xtc")
+    async def get_export_xtc(sid: str, precision: float = Query(1000.0, gt=1.0, le=100000.0)) -> Response:
+        record = _require_session(manager, sid)
+        frames, boxes, steps, times, dt_ps, _elems = _extract_trajectory_frames(record.session)
+        buf = io.BytesIO()
+        write_xtc(buf, frames, boxes=boxes, steps=steps, times_ps=times, dt_ps=dt_ps, precision=precision, units="nm")
+        return Response(
+            content=buf.getvalue(),
+            media_type="application/octet-stream",
+            headers={"Content-Disposition": f'attachment; filename="biology-mm-{sid}.xtc"'},
+        )
+
+    @application.get("/api/sessions/{sid}/export/pdb")
+    async def get_export_pdb(sid: str) -> Response:
+        record = _require_session(manager, sid)
+        frames, boxes, _steps, _times, _dt_ps, elems = _extract_trajectory_frames(record.session)
+        box0 = None if boxes is None else boxes[0]
+        pdb_text = write_pdb_topology(frames[0], elements=elems, box=box0, units="nm")
+        return Response(
+            content=pdb_text,
+            media_type="chemical/x-pdb",
+            headers={"Content-Disposition": f'attachment; filename="biology-mm-{sid}.pdb"'},
+        )
+
+    @application.post("/api/sessions/{sid}/enhanced-sampling")
+    async def configure_enhanced_sampling(sid: str, payload: EnhancedSamplingPayload) -> Dict[str, Any]:
+        record = _require_session(manager, sid)
+        try:
+            suite = PLUMEDParser.from_text(
+                payload.plumed_text,
+                one_based=payload.one_based,
+                temperature_K=payload.temperature_K,
+            )
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail=f"Invalid PLUMED-style enhanced sampling config: {exc}") from exc
+
+        frames, boxes, steps, times, _dt_ps, _elems = _extract_trajectory_frames(record.session)
+        box_curr = None if boxes is None else boxes[-1]
+        bias_e, bias_f, obs = suite.evaluate(
+            frames[-1],
+            box_nm=box_curr,
+            step=int(steps[-1]),
+            time_ps=float(times[-1]),
+            record=True,
+        )
+        setattr(record.session, "_enhanced_sampling", suite)
+        max_bias_f = float(np.max(np.linalg.norm(bias_f, axis=1))) if bias_f.size > 0 else 0.0
+        return {
+            "ok": True,
+            "session_id": sid,
+            "n_cvs": len(suite.cvs),
+            "n_biases": len(suite.biases),
+            "bias_energy_kj_mol": bias_e,
+            "max_bias_force_kj_mol_nm": max_bias_f,
+            "observables": obs,
+        }
+
+    @application.post("/api/sessions/{sid}/physics-params")
+    async def update_physics_params(sid: str, payload: PhysicsParamsPayload) -> Dict[str, Any]:
+        record = _require_session(manager, sid)
+        sim = record.session
+        updated: Dict[str, Any] = {}
+        with sim._lock:
+            if payload.temperature is not None:
+                sim.temperature = float(payload.temperature)
+                updated["temperature"] = sim.temperature
+            if payload.dt is not None:
+                sim.dt = float(payload.dt)
+                updated["dt"] = sim.dt
+            if payload.rcut is not None and hasattr(sim, "rcut"):
+                sim.rcut = float(payload.rcut)
+                updated["rcut"] = sim.rcut
+            if payload.efield_z is not None and hasattr(sim, "efield_z"):
+                sim.efield_z = float(payload.efield_z)
+                updated["efield_z"] = sim.efield_z
+            if payload.gcmc_mu is not None and hasattr(sim, "gcmc_mu"):
+                sim.gcmc_mu = float(payload.gcmc_mu)
+                updated["gcmc_mu"] = sim.gcmc_mu
+            if payload.strain_rate is not None and hasattr(sim, "strain_rate"):
+                sim.strain_rate = float(payload.strain_rate)
+                updated["strain_rate"] = sim.strain_rate
+            if payload.sigma_scale is not None and hasattr(sim, "sigma"):
+                sim.sigma = np.asarray(sim.sigma, dtype=np.float64) * float(payload.sigma_scale)
+                updated["sigma_scale"] = float(payload.sigma_scale)
+            if payload.epsilon_scale is not None and hasattr(sim, "epsilon"):
+                sim.epsilon = np.asarray(sim.epsilon, dtype=np.float64) * float(payload.epsilon_scale)
+                updated["epsilon_scale"] = float(payload.epsilon_scale)
+            if payload.charge_scale is not None and hasattr(sim, "charges"):
+                sim.charges = np.asarray(sim.charges, dtype=np.float64) * float(payload.charge_scale)
+                updated["charge_scale"] = float(payload.charge_scale)
+            if hasattr(sim, "_evaluate_state"):
+                sim._evaluate_state()
+        metrics = sim.get_metrics()
+        metrics["session_id"] = sid
+        return {"ok": True, "updated": updated, "metrics": metrics}
 
     @application.get("/api/sessions/{sid}/export/mvsj")
     async def get_export_mvsj(
