@@ -8,30 +8,14 @@ from typing import Any, Dict, List, Optional, Tuple
 import numpy as np
 
 _Z_TO_SYMBOL: Dict[int, str] = {
-    1: "H",
-    2: "He",
-    3: "Li",
-    4: "Be",
-    5: "B",
-    6: "C",
-    7: "N",
-    8: "O",
-    9: "F",
-    10: "Ne",
-    11: "Na",
-    12: "Mg",
-    13: "Al",
-    14: "Si",
-    15: "P",
-    16: "S",
-    17: "Cl",
-    18: "Ar",
-    19: "K",
-    20: "Ca",
-    26: "Fe",
-    30: "Zn",
-    35: "Br",
-    53: "I",
+    1: "H", 2: "He", 3: "Li", 4: "Be", 5: "B", 6: "C", 7: "N", 8: "O", 9: "F", 10: "Ne",
+    11: "Na", 12: "Mg", 13: "Al", 14: "Si", 15: "P", 16: "S", 17: "Cl", 18: "Ar", 19: "K", 20: "Ca",
+    21: "Sc", 22: "Ti", 23: "V", 24: "Cr", 25: "Mn", 26: "Fe", 27: "Co", 28: "Ni", 29: "Cu", 30: "Zn",
+    31: "Ga", 32: "Ge", 33: "As", 34: "Se", 35: "Br", 36: "Kr", 37: "Rb", 38: "Sr", 39: "Y", 40: "Zr",
+    41: "Nb", 42: "Mo", 44: "Ru", 45: "Rh", 46: "Pd", 47: "Ag", 48: "Cd", 49: "In", 50: "Sn", 51: "Sb",
+    52: "Te", 53: "I", 54: "Xe", 55: "Cs", 56: "Ba", 57: "La", 58: "Ce", 60: "Nd", 63: "Eu", 64: "Gd",
+    72: "Hf", 73: "Ta", 74: "W", 75: "Re", 76: "Os", 77: "Ir", 78: "Pt", 79: "Au", 80: "Hg", 81: "Tl",
+    82: "Pb", 83: "Bi", 90: "Th", 92: "U",
 }
 
 _ION_SYMBOLS = {"NA", "CL", "K", "MG", "CA", "FE", "ZN"}
@@ -284,7 +268,7 @@ def build_mmcif_from_session(session, channel: Optional[str] = None) -> str:
 
     # Filter covalent bonds: both endpoints active and length <= 0.45 * min(a, b, c)
     min_box_len = min(len_a, len_b, len_c)
-    max_bond_len = 0.45 * min_box_len if min_box_len > 0.0 else float("inf")
+    max_bond_len = min(0.45 * min_box_len, 3.2) if min_box_len > 0.0 else 3.2
     bond_rows: List[Tuple[str, str, int, str, str, str, int, str, float]] = []
 
     for i_raw, j_raw in bonds:
