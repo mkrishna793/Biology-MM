@@ -714,6 +714,7 @@ export class BiologyMmStudioStore {
         body: JSON.stringify({
           code,
           active_structure: activeStructure ?? undefined,
+          session_id: this.state.sessionId ?? undefined,
         }),
       });
       if (this.disposed) return res;

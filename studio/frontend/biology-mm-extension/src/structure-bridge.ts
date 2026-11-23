@@ -471,6 +471,14 @@ export class BiologyMmStructureBridge {
         Coordinates.create([frame], stepTime, time),
       );
       const nextModel = nextTraj.representative;
+      // Prevent Mol*'s ModelPeriodicity.makeWhole from chaining non-polymer/crystal atoms
+      // across periodic boundaries while keeping ModelSymmetry intact for the Unit Cell box.
+      if (nextModel._dynamicPropertyData) {
+        delete (nextModel._dynamicPropertyData as Record<string, unknown>)['__PeriodicBox__'];
+      }
+      if (this.baseModel._dynamicPropertyData) {
+        delete (this.baseModel._dynamicPropertyData as Record<string, unknown>)['__PeriodicBox__'];
+      }
 
       this.attachScalars(this.baseModel, scalars);
       this.attachScalars(nextModel, scalars);
@@ -567,6 +575,27 @@ export interface ExtractedMolstarBinaryStructure {
   readonly box_ang?: [number, number, number];
 }
 
+const _TWO_LETTER_ELEMENT_Z: Record<string, number> = {
+  HE: 2, LI: 3, BE: 4, NE: 10, NA: 11, MG: 12, AL: 13, SI: 14, CL: 17, AR: 18,
+  CA: 20, SC: 21, TI: 22, CR: 24, MN: 25, FE: 26, CO: 27, NI: 28, CU: 29, ZN: 30,
+  GA: 31, GE: 32, AS: 33, SE: 34, BR: 35, KR: 36, RB: 37, SR: 38, ZR: 40, NB: 41,
+  MO: 42, RU: 44, RH: 45, PD: 46, AG: 47, CD: 48, IN: 49, SN: 50, SB: 51, TE: 52,
+  XE: 54, CS: 55, BA: 56, LA: 57, CE: 58, ND: 60, EU: 63, GD: 64, HF: 72, TA: 73,
+  RE: 75, OS: 76, IR: 77, PT: 78, AU: 79, HG: 80, TL: 81, PB: 82, BI: 83, TH: 90,
+};
+
+function encodeElementByte(sym: string | undefined): number {
+  if (!sym) return 67; // 'C'
+  const u = sym.trim().toUpperCase();
+  if (!u) return 67;
+  if (u.length === 1) return u.charCodeAt(0);
+  const z = _TWO_LETTER_ELEMENT_Z[u.slice(0, 2)];
+  if (z !== undefined) {
+    return z >= 65 ? (z | 0x80) : z;
+  }
+  return u.charCodeAt(0);
+}
+
 export function extractActiveMolstarStructureBinary(
   plugin: PluginContext,
   excludeStructureRef?: string,
@@ -660,7 +689,7 @@ export function extractActiveMolstarStructureBinary(
       float32Coords[cBase + 2] = tmpVec[2];
 
       const sym = type_symbol.value(el);
-      u8View[elemOffset + atomIdx] = sym ? sym.charCodeAt(0) : 67; // 'C'
+      u8View[elemOffset + atomIdx] = encodeElementByte(sym);
       atomIdx++;
     }
   }
@@ -892,7 +921,7 @@ export function extractActiveMolstarSymmetryBinary(
         float32Coords[cBase + 2] = zCol[el];
       }
       const sym = type_symbol.value(el);
-      u8View[elemOffset + atomIdx] = sym ? sym.charCodeAt(0) : 67; // 'C'
+      u8View[elemOffset + atomIdx] = encodeElementByte(sym);
       atomIdx++;
     }
   }

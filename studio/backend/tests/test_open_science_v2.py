@@ -432,5 +432,44 @@ H -0.580 -0.940  0.000
         self.assertIn(".msp-viewport-logo", scss)
         self.assertIn(".msp-viewport-logo", html)
 
+    def test_codelab_and_crystal_periodic_integrity(self) -> None:
+        from fastapi.testclient import TestClient
+        from trium_studio.app import create_app
+
+        app = create_app()
+        with TestClient(app) as client:
+            # 1. Code Lab executing OpenScienceEngine -> auto-registers live SimulationSession
+            code1 = (
+                "from biology_mm import OpenScienceEngine, PhysicsParameters, build_alanine_dipeptide\n"
+                "eng = OpenScienceEngine(build_alanine_dipeptide(), PhysicsParameters(temperature_K=310.0, dt_ps=0.001))\n"
+                "eng.run(10)\n"
+            )
+            r1 = client.post("/api/code/run", json={"code": code1})
+            self.assertEqual(r1.status_code, 200, r1.text)
+            d1 = r1.json()
+            self.assertTrue(d1["ok"])
+            sid = d1["session_id"]
+            self.assertEqual(d1["metrics"]["step"], 10)
+
+            # 2. Code Lab mutating the active session in-place using session_id
+            code2 = (
+                "session.steer(temperature=450.0, efield_z=0.3)\n"
+                "session.rcut = 0.90\n"
+                "session.step(5)\n"
+            )
+            r2 = client.post("/api/code/run", json={"code": code2, "session_id": sid})
+            self.assertEqual(r2.status_code, 200, r2.text)
+            d2 = r2.json()
+            self.assertTrue(d2["ok"])
+            self.assertEqual(d2["metrics"]["step"], 15)
+
+            # 3. Live physics-params update rebuilds GPU plan and rescales temperature
+            r3 = client.post(
+                f"/api/sessions/{sid}/physics-params",
+                json={"temperature": 500.0, "rcut": 0.85, "sigma_scale": 1.02, "epsilon_scale": 1.05},
+            )
+            self.assertEqual(r3.status_code, 200, r3.text)
+            self.assertAlmostEqual(r3.json()["metrics"]["temperature_K"], 500.0, delta=5.0)
+
 if __name__ == "__main__":
     unittest.main()

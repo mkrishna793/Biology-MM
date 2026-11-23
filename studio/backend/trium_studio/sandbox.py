@@ -165,11 +165,133 @@ def _build_restricted_builtins() -> Dict[str, Any]:
     return safe
 
 
+def _convert_code_lab_object_to_session(
+    obj: Any,
+    active_structure_metadata: Optional[Dict[str, Any]] = None,
+) -> Optional[SimulationSession]:
+    """Convert an OpenScienceEngine, MolecularTopology, OpenParameterSet, or AtomicSystem created in Code Lab into a live SimulationSession."""
+    from biology_mm import AtomicSystem, MolecularTopology, OpenParameterSet, OpenScienceEngine
+
+    if isinstance(obj, SimulationSession):
+        with obj._lock:
+            obj._init_backend_resources()
+            obj._evaluate_state()
+        return obj
+
+    if isinstance(obj, OpenScienceEngine):
+        b_diag = obj._box_diag(obj.box)
+        if b_diag is not None and len(b_diag) == 3:
+            box_tup = (float(b_diag[0]), float(b_diag[1]), float(b_diag[2]))
+        else:
+            span = np.ptp(obj.positions, axis=0) if obj.positions.shape[0] > 1 else np.zeros(3)
+            box_tup = (max(float(span[0]) + 1.8, 2.8), max(float(span[1]) + 1.8, 2.8), max(float(span[2]) + 1.8, 2.8))
+        sys_now = AtomicSystem(
+            positions=np.asarray(obj.positions, dtype=np.float64).copy(),
+            masses=np.asarray(obj.masses, dtype=np.float64).copy(),
+            charges=np.asarray(obj.charges, dtype=np.float64).copy(),
+            box_lengths=box_tup,
+            names=list(obj.top.elements),
+            bonds=[(int(b[0]), int(b[1])) for b in obj.top.bonds],
+            units="md",
+        )
+        sess = SimulationSession(
+            sys_now,
+            mode="metal_verlet",
+            dt=float(obj.params.dt_ps),
+            temperature=float(obj.params.temperature_K),
+            rcut=float(obj.params.rcut_nm),
+            alpha_dsf=0.25 if np.any(sys_now.charges != 0.0) else 0.0,
+            efield_z=float(obj.params.efield_z),
+            sigma=np.asarray(obj.sigma, dtype=np.float64).copy(),
+            epsilon=np.asarray(obj.epsilon, dtype=np.float64).copy(),
+            structure_metadata=active_structure_metadata,
+        )
+        with sess._lock:
+            sess.momenta[: sess.n_real] = np.asarray(obj.velocities, dtype=np.float64) * sess.masses[: sess.n_real, None]
+            sess.step_count = int(obj.step_count)
+            sess.sim_time_ps = float(obj.time_ps)
+            if obj.enhanced is not None:
+                setattr(sess, "_enhanced_sampling", obj.enhanced)
+            sess._evaluate_state()
+        return sess
+
+    if isinstance(obj, MolecularTopology):
+        if obj.box_nm is not None:
+            b_arr = np.asarray(obj.box_nm, dtype=np.float64)
+            b_diag = np.diag(b_arr) if b_arr.shape == (3, 3) else b_arr
+            box_tup = (float(b_diag[0]), float(b_diag[1]), float(b_diag[2]))
+        else:
+            span = np.ptp(obj.positions_nm, axis=0) if obj.positions_nm.shape[0] > 1 else np.zeros(3)
+            box_tup = (max(float(span[0]) + 1.8, 2.8), max(float(span[1]) + 1.8, 2.8), max(float(span[2]) + 1.8, 2.8))
+        sys_top = AtomicSystem(
+            positions=np.asarray(obj.positions_nm, dtype=np.float64).copy(),
+            masses=np.asarray(obj.masses_amu, dtype=np.float64).copy(),
+            charges=np.asarray(obj.charges_e, dtype=np.float64).copy(),
+            box_lengths=box_tup,
+            names=list(obj.elements),
+            bonds=[(int(b[0]), int(b[1])) for b in obj.bonds],
+            units="md",
+        )
+        return SimulationSession(
+            sys_top,
+            mode="metal_verlet",
+            dt=0.002,
+            temperature=300.0,
+            rcut=1.0,
+            alpha_dsf=0.25 if np.any(sys_top.charges != 0.0) else 0.0,
+            sigma=np.asarray(obj.sigma_nm, dtype=np.float64).copy(),
+            epsilon=np.asarray(obj.epsilon_kj_mol, dtype=np.float64).copy(),
+            structure_metadata=active_structure_metadata,
+        )
+
+    if isinstance(obj, OpenParameterSet):
+        if obj.box_nm is not None:
+            b_arr = np.asarray(obj.box_nm, dtype=np.float64)
+            b_diag = np.diag(b_arr) if b_arr.shape == (3, 3) else b_arr
+            box_tup = (float(b_diag[0]), float(b_diag[1]), float(b_diag[2]))
+        else:
+            box_tup = (3.5, 3.5, 3.5)
+        sys_pset = AtomicSystem(
+            positions=np.asarray(obj.positions_nm, dtype=np.float64).copy(),
+            masses=np.asarray(obj.masses_amu, dtype=np.float64).copy(),
+            charges=np.asarray(obj.charges_e, dtype=np.float64).copy(),
+            box_lengths=box_tup,
+            names=list(obj.elements),
+            bonds=[(int(b[0]), int(b[1])) for b in obj.bonds],
+            units="md",
+        )
+        return SimulationSession(
+            sys_pset,
+            mode="metal_verlet",
+            dt=0.002,
+            temperature=300.0,
+            rcut=1.0,
+            alpha_dsf=0.25 if np.any(sys_pset.charges != 0.0) else 0.0,
+            sigma=np.asarray(obj.sigma_nm, dtype=np.float64).copy(),
+            epsilon=np.asarray(obj.epsilon_kj_mol, dtype=np.float64).copy(),
+            structure_metadata=active_structure_metadata,
+        )
+
+    if isinstance(obj, AtomicSystem):
+        return SimulationSession(
+            obj,
+            mode="metal_verlet",
+            dt=0.002,
+            temperature=300.0,
+            rcut=1.0,
+            alpha_dsf=0.25 if np.any(obj.charges != 0.0) else 0.0,
+            structure_metadata=active_structure_metadata,
+        )
+
+    return None
+
+
 def execute_user_code(
     code: str,
     timeout_s: float = 10.0,
     active_structure: Optional[Any] = None,
     active_structure_metadata: Optional[Dict[str, Any]] = None,
+    current_session: Optional[Any] = None,
 ) -> Tuple[Dict[str, Any], Optional[SimulationSession]]:
     """
     Validate and execute user Python code in a restricted sandbox with timeout.
@@ -208,7 +330,10 @@ def execute_user_code(
         "math": math,
         "active_structure": active_structure,
         "active_structure_metadata": active_structure_metadata,
+        "current_session": current_session,
     }
+    if isinstance(current_session, SimulationSession):
+        exec_globals["session"] = current_session
     exec_locals: Dict[str, Any] = {}
     err_holder: Dict[str, Optional[str]] = {"error": None}
 
@@ -243,16 +368,26 @@ def execute_user_code(
             "elapsed_ms": round(elapsed_ms, 3),
         }, None
 
+    from biology_mm import AtomicSystem, MolecularTopology, OpenParameterSet, OpenScienceEngine
+
     found_session: Optional[SimulationSession] = None
     if isinstance(exec_locals.get("session"), SimulationSession):
-        found_session = exec_locals["session"]
-    elif isinstance(exec_globals.get("session"), SimulationSession):
-        found_session = exec_globals["session"]
+        found_session = _convert_code_lab_object_to_session(exec_locals["session"], active_structure_metadata)
     else:
+        # Priority 1: Any SimulationSession or OpenScienceEngine created in exec_locals
         for val in list(exec_locals.values())[::-1]:
-            if isinstance(val, SimulationSession):
-                found_session = val
+            if isinstance(val, (SimulationSession, OpenScienceEngine)):
+                found_session = _convert_code_lab_object_to_session(val, active_structure_metadata)
                 break
+        # Priority 2: Any OpenParameterSet, MolecularTopology, or AtomicSystem created in exec_locals (excluding unchanged active_structure)
+        if found_session is None:
+            for val in list(exec_locals.values())[::-1]:
+                if isinstance(val, (OpenParameterSet, MolecularTopology, AtomicSystem)) and val is not active_structure:
+                    found_session = _convert_code_lab_object_to_session(val, active_structure_metadata)
+                    break
+        # Priority 3: Pre-injected session modified in-place
+        if found_session is None and isinstance(exec_globals.get("session"), SimulationSession):
+            found_session = _convert_code_lab_object_to_session(exec_globals["session"], active_structure_metadata)
 
     result: Dict[str, Any] = {
         "ok": True,

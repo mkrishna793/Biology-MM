@@ -120,16 +120,17 @@ def build_mmcif_from_session(session, channel: Optional[str] = None) -> str:
         "#",
     ]
 
-    # Resolve per-active-slot mmCIF annotation fields
+    # Resolve per-active-slot mmCIF annotation fields (supporting both Mol* extract keys and structure_loader keys)
+    is_crystal = bool(meta.get("crystallographic")) if isinstance(meta, dict) else False
     meta_group = meta.get("group_pdb") if isinstance(meta, dict) else None
-    meta_atom = meta.get("atom_id") if isinstance(meta, dict) else None
-    meta_comp = meta.get("comp_id") if isinstance(meta, dict) else None
-    meta_asym = meta.get("asym_id") if isinstance(meta, dict) else None
+    meta_atom = (meta.get("atom_id") or meta.get("atom_names")) if isinstance(meta, dict) else None
+    meta_comp = (meta.get("comp_id") or meta.get("res_names")) if isinstance(meta, dict) else None
+    meta_asym = (meta.get("asym_id") or meta.get("chain_ids")) if isinstance(meta, dict) else None
     meta_ent = meta.get("entity_id") if isinstance(meta, dict) else None
-    meta_seq = meta.get("seq_id") if isinstance(meta, dict) else None
+    meta_seq = (meta.get("seq_id") or meta.get("res_ids")) if isinstance(meta, dict) else None
     meta_entities = meta.get("entities") if isinstance(meta, dict) else None
 
-    slot_records: List[Tuple[int, str, str, str, str, str, str, int, float]] = []
+    slot_records: List[Tuple[int, int, str, str, str, str, str, str, int, float]] = []
     # Maps for _entity, _entity_poly_seq, and _struct_asym
     entities_seen: Dict[str, Tuple[str, str]] = {}
     if isinstance(meta_entities, list):
@@ -143,6 +144,7 @@ def build_mmcif_from_session(session, channel: Optional[str] = None) -> str:
     asyms_seen: Dict[str, str] = {}
     poly_seq_seen: Dict[str, List[Tuple[int, str]]] = {}
     poly_res_seen: Dict[Tuple[str, int], str] = {}
+    seen_atom_keys: set = set()
 
     ion_seq_counter = 0
     for idx, slot in enumerate(active_slots):
@@ -151,19 +153,25 @@ def build_mmcif_from_session(session, channel: Optional[str] = None) -> str:
         sym = _safe_element_symbol(names[slot_int], int(atomic_numbers[slot_int]))
         b_val = float(scalars[slot_int]) if scalars is not None and slot_int < scalars.shape[0] else 0.0
 
-        if meta_atom and slot_int < len(meta_atom):
+        if not is_crystal and meta_atom and slot_int < len(meta_atom):
             group_pdb = _cif_token(meta_group[slot_int] if meta_group and slot_int < len(meta_group) else "ATOM", "ATOM")
             atom_label = _cif_token(meta_atom[slot_int], f"{sym}{cif_id}")
             comp_id = _cif_token(meta_comp[slot_int] if meta_comp and slot_int < len(meta_comp) else "MOL", "MOL")
             asym_id = _cif_token(meta_asym[slot_int] if meta_asym and slot_int < len(meta_asym) else "A", "A")
-            ent_id = _cif_token(meta_ent[slot_int] if meta_ent and slot_int < len(meta_ent) else "1", "1")
+            if meta_ent and slot_int < len(meta_ent):
+                ent_id = _cif_token(meta_ent[slot_int], "1")
+            else:
+                ent_id = "1" if group_pdb == "ATOM" else ("3" if comp_id in ("HOH", "WAT", "TIP3") else "2")
             seq_id = int(meta_seq[slot_int]) if meta_seq and slot_int < len(meta_seq) else 1
+            if (asym_id, seq_id, atom_label) in seen_atom_keys:
+                atom_label = f"{atom_label}_{cif_id}"
+            seen_atom_keys.add((asym_id, seq_id, atom_label))
             if ent_id not in entities_seen:
-                etype = "polymer" if group_pdb == "ATOM" else ("water" if comp_id in ("HOH", "WAT") else "non-polymer")
+                etype = "polymer" if group_pdb == "ATOM" else ("water" if comp_id in ("HOH", "WAT", "TIP3") else "non-polymer")
                 entities_seen[ent_id] = (etype, comp_id)
         else:
             sym_u = sym.upper()
-            if sym_u in _ION_SYMBOLS:
+            if not is_crystal and sym_u in _ION_SYMBOLS:
                 ion_seq_counter += 1
                 group_pdb = "HETATM"
                 atom_label = sym_u
@@ -178,7 +186,7 @@ def build_mmcif_from_session(session, channel: Optional[str] = None) -> str:
                 comp_id = "MOL"
                 asym_id = "A"
                 ent_id = "1"
-                seq_id = 1
+                seq_id = cif_id if is_crystal else 1
                 entities_seen.setdefault("1", ("non-polymer", "Simulation_System"))
 
         asyms_seen.setdefault(asym_id, ent_id)

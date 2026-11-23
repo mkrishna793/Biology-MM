@@ -50,7 +50,7 @@ from .ternary_compact import CompactSymmetryMultiscaleSession, encode_elements_u
 from .tryte_tiles import TryteTileFullAtomSession
 from .presets import PRESET_DEFINITIONS, create_preset_session, get_preset, list_presets
 from .sandbox import execute_user_code
-from .structure_loader import load_structure_from_bytes, load_structure_pair_from_bytes
+from .structure_loader import _infer_bonds_pbc, load_structure_from_bytes, load_structure_pair_from_bytes
 from .ws_manager import PALETTE_NAMES, ManagedSession, SessionManager
 
 STUDIO_VERSION = "2.0.0"
@@ -118,6 +118,7 @@ class CodeRunPayload(BaseModel):
     code: str
     timeout_s: float = Field(10.0, gt=0.1, le=30.0)
     active_structure: Optional[ActiveStructurePayload] = None
+    session_id: Optional[str] = None
 
 
 class RelaxPayload(BaseModel):
@@ -178,9 +179,15 @@ _ELEMENT_MASSES: Dict[str, float] = {
     "CA": 40.078,
     "FE": 55.845,
     "ZN": 65.38,
-    "SE": 78.971,
-    "BR": 79.904,
-    "I": 126.90,
+    "SC": 44.956, "TI": 47.867, "V": 50.942, "CR": 51.996, "MN": 54.938,
+    "CO": 58.933, "NI": 58.693, "CU": 63.546, "GA": 69.723, "GE": 72.630,
+    "AS": 74.922, "SE": 78.971, "BR": 79.904, "RB": 85.468, "SR": 87.62,
+    "Y": 88.906, "ZR": 91.224, "NB": 92.906, "MO": 95.95, "RU": 101.07,
+    "RH": 102.91, "PD": 106.42, "AG": 107.87, "CD": 112.41, "IN": 114.82,
+    "SN": 118.71, "SB": 121.76, "TE": 127.60, "I": 126.90, "CS": 132.91,
+    "BA": 137.33, "LA": 138.91, "CE": 140.12, "GD": 157.25, "HF": 178.49,
+    "TA": 180.95, "W": 183.84, "IR": 192.22, "PT": 195.08, "AU": 196.97,
+    "PB": 207.2, "BI": 208.98, "U": 238.03,
 }
 
 
@@ -218,13 +225,24 @@ def _build_system_from_structure_payload(
     bx, by, bz = 0.0, 0.0, 0.0
     if payload.box_ang and len(payload.box_ang) == 3:
         bx, by, bz = (max(0.0, float(v) * 0.1) for v in payload.box_ang)
-    box_nm = (
-        max(bx, float(span[0]) + 2 * margin, 2.8),
-        max(by, float(span[1]) + 2 * margin, 2.8),
-        max(bz, float(span[2]) + 2 * margin, 2.8),
-    )
-    offset = 0.5 * (np.array(box_nm) - span)
-    pos_nm = pos_shifted + offset
+    if (
+        bx > 0.3
+        and by > 0.3
+        and bz > 0.3
+        and bx >= float(span[0]) - 0.25
+        and by >= float(span[1]) - 0.25
+        and bz >= float(span[2]) - 0.25
+    ):
+        box_nm = (bx, by, bz)
+        pos_nm = np.mod(pos_nm, np.array(box_nm, dtype=np.float64)[None, :])
+    else:
+        box_nm = (
+            max(bx, float(span[0]) + 2 * margin, 2.8),
+            max(by, float(span[1]) + 2 * margin, 2.8),
+            max(bz, float(span[2]) + 2 * margin, 2.8),
+        )
+        offset = 0.5 * (np.array(box_nm) - span)
+        pos_nm = pos_shifted + offset
 
     bonds: List[Tuple[int, int]] = []
     seen_bonds = set()
@@ -238,6 +256,8 @@ def _build_system_from_structure_payload(
                 if key not in seen_bonds:
                     seen_bonds.add(key)
                     bonds.append(key)
+    if not bonds and 1 < n <= 8000:
+        bonds = _infer_bonds_pbc(pos_nm, names, box_nm=np.diag(box_nm))
 
     sys = AtomicSystem(
         positions=pos_nm,
@@ -512,22 +532,24 @@ def create_app(dist_dir: Optional[Path] = None) -> FastAPI:
         span = np.ptp(pos_shifted, axis=0) if n_atoms > 1 else np.zeros(3, dtype=np.float64)
         if bx > 0 and by > 0 and bz > 0:
             box_nm = (float(bx) * 0.1, float(by) * 0.1, float(bz) * 0.1)
+            pos_nm = np.mod(pos_nm, np.array(box_nm, dtype=np.float64)[None, :])
         else:
             box_nm = (
                 max(float(span[0]) + 2 * margin, 2.8),
                 max(float(span[1]) + 2 * margin, 2.8),
                 max(float(span[2]) + 2 * margin, 2.8),
             )
-        offset_pos = 0.5 * (np.array(box_nm) - span)
-        pos_nm = pos_shifted + offset_pos
+            offset_pos = 0.5 * (np.array(box_nm) - span)
+            pos_nm = pos_shifted + offset_pos
 
+        inferred_bonds = _infer_bonds_pbc(pos_nm, names, box_nm=np.diag(box_nm)) if 1 < n_atoms <= 8000 else []
         sys = AtomicSystem(
             positions=pos_nm,
             masses=masses,
             charges=charges,
             box_lengths=box_nm,
             names=names,
-            bonds=[],
+            bonds=inferred_bonds,
             units="md",
         )
 
@@ -1128,6 +1150,7 @@ def create_app(dist_dir: Optional[Path] = None) -> FastAPI:
         record = _require_session(manager, sid)
         sim = record.session
         updated: Dict[str, Any] = {}
+        needs_rebuild = False
         with sim._lock:
             if payload.temperature is not None:
                 sim.temperature = float(payload.temperature)
@@ -1138,6 +1161,7 @@ def create_app(dist_dir: Optional[Path] = None) -> FastAPI:
             if payload.rcut is not None and hasattr(sim, "rcut"):
                 sim.rcut = float(payload.rcut)
                 updated["rcut"] = sim.rcut
+                needs_rebuild = True
             if payload.efield_z is not None and hasattr(sim, "efield_z"):
                 sim.efield_z = float(payload.efield_z)
                 updated["efield_z"] = sim.efield_z
@@ -1150,16 +1174,24 @@ def create_app(dist_dir: Optional[Path] = None) -> FastAPI:
             if payload.sigma_scale is not None and hasattr(sim, "sigma"):
                 sim.sigma = np.asarray(sim.sigma, dtype=np.float64) * float(payload.sigma_scale)
                 updated["sigma_scale"] = float(payload.sigma_scale)
+                needs_rebuild = True
             if payload.epsilon_scale is not None and hasattr(sim, "epsilon"):
                 sim.epsilon = np.asarray(sim.epsilon, dtype=np.float64) * float(payload.epsilon_scale)
                 updated["epsilon_scale"] = float(payload.epsilon_scale)
+                needs_rebuild = True
             if payload.charge_scale is not None and hasattr(sim, "charges"):
                 sim.charges = np.asarray(sim.charges, dtype=np.float64) * float(payload.charge_scale)
                 updated["charge_scale"] = float(payload.charge_scale)
+                needs_rebuild = True
+            if needs_rebuild and hasattr(sim, "_init_backend_resources"):
+                sim._init_backend_resources()
             if hasattr(sim, "_evaluate_state"):
                 sim._evaluate_state()
+        if payload.temperature is not None and hasattr(sim, "steer"):
+            sim.steer(temperature=payload.temperature)
         metrics = sim.get_metrics()
         metrics["session_id"] = sid
+        manager.push_current_frame(record, metrics=metrics, reversed_step=False)
         return {"ok": True, "updated": updated, "metrics": metrics}
 
     @application.get("/api/sessions/{sid}/export/mvsj")
@@ -1215,14 +1247,26 @@ def create_app(dist_dir: Optional[Path] = None) -> FastAPI:
     async def run_code(payload: CodeRunPayload) -> Dict[str, Any]:
         active_sys = None
         active_meta = None
+        current_session = None
+        if payload.session_id:
+            rec_curr = manager.get_session(payload.session_id)
+            if rec_curr is not None:
+                current_session = rec_curr.session
+                active_sys = getattr(current_session, "system", None)
+                active_meta = getattr(current_session, "structure_metadata", None)
         if payload.active_structure is not None:
-            active_sys, active_meta = _build_system_from_structure_payload(payload.active_structure)
+            parsed_sys, parsed_meta = _build_system_from_structure_payload(payload.active_structure)
+            if active_sys is None:
+                active_sys = parsed_sys
+            if active_meta is None:
+                active_meta = parsed_meta
 
         result, sim = execute_user_code(
             payload.code,
             timeout_s=payload.timeout_s,
             active_structure=active_sys,
             active_structure_metadata=active_meta,
+            current_session=current_session,
         )
         if sim is not None:
             if sim.structure_metadata is None and active_meta is not None and active_sys is not None and sim.n_real == active_sys.n_atoms:

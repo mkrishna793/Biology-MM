@@ -60,42 +60,25 @@ PHYSICS_CHANNEL_NAMES = (
 )
 
 ELEMENT_Z: Dict[str, int] = {
-    "H": 1,
-    "He": 2,
-    "Li": 3,
-    "Be": 4,
-    "B": 5,
-    "C": 6,
-    "N": 7,
-    "O": 8,
-    "F": 9,
-    "Ne": 10,
-    "Na": 11,
-    "Mg": 12,
-    "Al": 13,
-    "Si": 14,
-    "P": 15,
-    "S": 16,
-    "Cl": 17,
-    "Ar": 18,
-    "K": 19,
-    "Ca": 20,
-    "Fe": 26,
-    "Zn": 30,
-    "Br": 35,
-    "I": 53,
-    "X": 6,
+    "H": 1, "He": 2, "Li": 3, "Be": 4, "B": 5, "C": 6, "N": 7, "O": 8, "F": 9, "Ne": 10,
+    "Na": 11, "Mg": 12, "Al": 13, "Si": 14, "P": 15, "S": 16, "Cl": 17, "Ar": 18, "K": 19, "Ca": 20,
+    "Sc": 21, "Ti": 22, "V": 23, "Cr": 24, "Mn": 25, "Fe": 26, "Co": 27, "Ni": 28, "Cu": 29, "Zn": 30,
+    "Ga": 31, "Ge": 32, "As": 33, "Se": 34, "Br": 35, "Kr": 36, "Rb": 37, "Sr": 38, "Y": 39, "Zr": 40,
+    "Nb": 41, "Mo": 42, "Ru": 44, "Rh": 45, "Pd": 46, "Ag": 47, "Cd": 48, "In": 49, "Sn": 50, "Sb": 51,
+    "Te": 52, "I": 53, "Xe": 54, "Cs": 55, "Ba": 56, "La": 57, "Ce": 58, "Nd": 60, "Eu": 63, "Gd": 64,
+    "Hf": 72, "Ta": 73, "W": 74, "Re": 75, "Os": 76, "Ir": 77, "Pt": 78, "Au": 79, "Hg": 80, "Tl": 81,
+    "Pb": 82, "Bi": 83, "Th": 90, "U": 92, "X": 6,
 }
 
 ELEMENT_RADII_ANG: Dict[int, float] = {
-    1: 1.10,
-    6: 1.70,
-    7: 1.55,
-    8: 1.52,
-    11: 2.27,
-    14: 2.10,
-    17: 1.75,
-    18: 1.88,
+    1: 1.10, 2: 1.40, 3: 1.82, 4: 1.53, 5: 1.92, 6: 1.70, 7: 1.55, 8: 1.52, 9: 1.47, 10: 1.54,
+    11: 2.27, 12: 1.73, 13: 1.84, 14: 2.10, 15: 1.80, 16: 1.80, 17: 1.75, 18: 1.88, 19: 2.75, 20: 2.31,
+    21: 2.11, 22: 2.00, 23: 1.95, 24: 1.90, 25: 1.90, 26: 2.00, 27: 1.85, 28: 1.63, 29: 1.40, 30: 1.39,
+    31: 1.87, 32: 2.11, 33: 1.85, 34: 1.90, 35: 1.85, 36: 2.02, 37: 3.03, 38: 2.49, 39: 2.19, 40: 2.06,
+    41: 2.07, 42: 2.09, 44: 2.05, 45: 2.00, 46: 1.63, 47: 1.72, 48: 1.58, 49: 1.93, 50: 2.17, 51: 2.06,
+    52: 2.06, 53: 1.98, 54: 2.16, 55: 3.43, 56: 2.68, 57: 2.40, 58: 2.35, 60: 2.29, 63: 2.33, 64: 2.37,
+    72: 2.12, 73: 2.17, 74: 2.10, 75: 2.05, 76: 2.00, 77: 2.00, 78: 1.75, 79: 1.66, 80: 1.55, 81: 1.96,
+    82: 2.02, 83: 2.07, 90: 2.37, 92: 1.86,
 }
 
 KB_KJ_MOL_K = 0.00831446261815324
@@ -785,6 +768,18 @@ class SimulationSession:
         self.charges = np.zeros(self.capacity, dtype=np.float64)
         self.sigma = np.full(self.capacity, float(sigma) if np.ndim(sigma) == 0 else 0.34, dtype=np.float64)
         self.epsilon = np.full(self.capacity, float(epsilon) if np.ndim(epsilon) == 0 else 0.997, dtype=np.float64)
+        if np.ndim(sigma) == 0 and np.ndim(epsilon) == 0 and self.system.units == "md" and getattr(self.system, "names", None):
+            try:
+                from biology_mm.openff_amber_bridge import _OPEN_LJ_TABLE
+                for _idx_el, _nm in enumerate(self.system.names[: self.n_real]):
+                    _key = "".join(c for c in str(_nm) if c.isalpha()).upper()
+                    if _key in _OPEN_LJ_TABLE:
+                        _s_nm, _e_kj, _, _ = _OPEN_LJ_TABLE[_key]
+                        if _s_nm > 0.0:
+                            self.sigma[_idx_el] = _s_nm
+                            self.epsilon[_idx_el] = max(0.02, _e_kj)
+            except Exception:
+                pass
         self.active_mask = np.zeros(self.capacity, dtype=bool)
         self.active_mask[:n] = True
 
@@ -797,7 +792,16 @@ class SimulationSession:
             self.epsilon[:n] = np.asarray(epsilon, dtype=np.float64)
 
         self.names = list(self.system.names) + ["Ar"] * (self.capacity - n)
-        self.atomic_numbers = np.array([ELEMENT_Z.get(nm, 6) for nm in self.names], dtype=np.uint8)
+        self.atomic_numbers = np.array(
+            [
+                ELEMENT_Z.get(
+                    ("".join(c for c in str(nm) if c.isalpha())[:1].upper() + "".join(c for c in str(nm) if c.isalpha())[1:].lower()),
+                    ELEMENT_Z.get(str(nm).strip(), 6),
+                )
+                for nm in self.names
+            ],
+            dtype=np.uint8,
+        )
         self.radii_ang = np.array([ELEMENT_RADII_ANG.get(int(z), 1.5) for z in self.atomic_numbers], dtype=np.float32)
         if self.capacity > n:
             self.radii_ang[n:] = 0.0  # vacant GCMC slots hidden by radius 0
@@ -805,15 +809,34 @@ class SimulationSession:
         lx, ly, lz = self.system.box_lengths
         self.box_H = np.diag([lx, ly, lz]).astype(np.float64)
         self.bonds = [(int(i), int(j)) for i, j in self.system.bonds]
+        if not self.bonds and 1 < self.n_real <= 8000 and self.mode == "metal_verlet" and self.system.units == "md":
+            try:
+                from .structure_loader import _infer_bonds_pbc
+                inferred = _infer_bonds_pbc(self.positions[: self.n_real], self.names[: self.n_real], box_nm=self.box_H)
+                if inferred:
+                    self.bonds = [(int(i), int(j)) for i, j in inferred]
+            except Exception:
+                pass
         self.bond_orders = np.ones(len(self.bonds), dtype=np.float32)
         if self.bonds and self.n_real > 0:
             self._bond_pairs = np.asarray(self.bonds, dtype=np.int32)
             _, r0_vec = self._mic_vectors(self._bond_pairs[:, 0], self._bond_pairs[:, 1], self.positions[: self.n_real])
             self._bond_r0 = np.clip(r0_vec, 0.08, 0.35)
             ang_list, dih_list = _extract_angles_and_dihedrals(self.bonds)
-            if ang_list:
-                self._angle_triplets = np.asarray(ang_list, dtype=np.int32)
-                ai, aj, ak = self._angle_triplets[:, 0], self._angle_triplets[:, 1], self._angle_triplets[:, 2]
+            deg_counts: Dict[int, int] = {}
+            for u_b, v_b in self.bonds:
+                deg_counts[int(u_b)] = deg_counts.get(int(u_b), 0) + 1
+                deg_counts[int(v_b)] = deg_counts.get(int(v_b), 0) + 1
+
+            # Filter out hyper-coordinated metallic core angles (deg > 8) and collinear 180-deg trans angles
+            cand_ang = [
+                (i_a, j_a, k_a)
+                for (i_a, j_a, k_a) in ang_list
+                if deg_counts.get(int(j_a), 0) <= 8
+            ]
+            if cand_ang:
+                cand_tri = np.asarray(cand_ang, dtype=np.int32)
+                ai, aj, ak = cand_tri[:, 0], cand_tri[:, 1], cand_tri[:, 2]
                 v1, r1 = self._mic_vectors(ai, aj, self.positions[: self.n_real])
                 v2, r2 = self._mic_vectors(ak, aj, self.positions[: self.n_real])
                 cos_th = np.clip(
@@ -821,29 +844,54 @@ class SimulationSession:
                     -0.999999,
                     0.999999,
                 )
-                self._angle_theta0 = np.arccos(cos_th)
+                # Exclude near-180-deg trans angles (|cos_th| > 0.95) that hit the arccos cusp singularity
+                keep_ang = np.abs(cos_th) <= 0.95
+                if np.any(keep_ang):
+                    self._angle_triplets = cand_tri[keep_ang]
+                    self._angle_theta0 = np.arccos(cos_th[keep_ang])
+                else:
+                    self._angle_triplets = np.zeros((0, 3), dtype=np.int32)
+                    self._angle_theta0 = np.zeros(0, dtype=np.float64)
             else:
                 self._angle_triplets = np.zeros((0, 3), dtype=np.int32)
                 self._angle_theta0 = np.zeros(0, dtype=np.float64)
 
             if dih_list:
-                self._dihedral_quartets = np.asarray(dih_list, dtype=np.int32)
-                di, dj, dk, dl = (
-                    self._dihedral_quartets[:, 0],
-                    self._dihedral_quartets[:, 1],
-                    self._dihedral_quartets[:, 2],
-                    self._dihedral_quartets[:, 3],
-                )
-                r_ij, _ = self._mic_vectors(di, dj, self.positions[: self.n_real])
+                filtered_dih = [
+                    (i_d, j_d, k_d, l_d)
+                    for (i_d, j_d, k_d, l_d) in dih_list
+                    if deg_counts.get(int(j_d), 0) <= 4 and deg_counts.get(int(k_d), 0) <= 4
+                ]
+            else:
+                filtered_dih = []
+
+            if filtered_dih:
+                cand_q = np.asarray(filtered_dih, dtype=np.int32)
+                di, dj, dk, dl = cand_q[:, 0], cand_q[:, 1], cand_q[:, 2], cand_q[:, 3]
+                r_ij, rij_len = self._mic_vectors(di, dj, self.positions[: self.n_real])
                 r_kj, rkj_len = self._mic_vectors(dk, dj, self.positions[: self.n_real])
-                r_kl, _ = self._mic_vectors(dk, dl, self.positions[: self.n_real])
+                r_kl, rkl_len = self._mic_vectors(dk, dl, self.positions[: self.n_real])
                 m = np.cross(r_ij, r_kj)
                 n_vec = np.cross(r_kj, r_kl)
                 m_len = np.sqrt(np.maximum(np.sum(m * m, axis=1), 1e-12))
                 n_len = np.sqrt(np.maximum(np.sum(n_vec * n_vec, axis=1), 1e-12))
-                cos_phi = np.clip(np.sum(m * n_vec, axis=1) / (m_len * n_len), -0.999999, 0.999999)
-                sin_phi = np.sum(np.cross(m, n_vec) * r_kj, axis=1) / (m_len * n_len * np.maximum(rkj_len, 1e-6))
-                self._dihedral_phi0 = np.arctan2(sin_phi, cos_phi)
+                sin_ijk = m_len / np.maximum(rij_len * rkj_len, 1e-6)
+                sin_jkl = n_len / np.maximum(rkj_len * rkl_len, 1e-6)
+                keep_dih = (sin_ijk > 0.30) & (sin_jkl > 0.30)
+                if np.any(keep_dih):
+                    self._dihedral_quartets = cand_q[keep_dih]
+                    m_k = m[keep_dih]
+                    n_k = n_vec[keep_dih]
+                    m_l = m_len[keep_dih]
+                    n_l = n_len[keep_dih]
+                    rkj_k = r_kj[keep_dih]
+                    rkj_l = rkj_len[keep_dih]
+                    cos_phi = np.clip(np.sum(m_k * n_k, axis=1) / (m_l * n_l), -0.999999, 0.999999)
+                    sin_phi = np.sum(np.cross(m_k, n_k) * rkj_k, axis=1) / (m_l * n_l * np.maximum(rkj_l, 1e-6))
+                    self._dihedral_phi0 = np.arctan2(sin_phi, cos_phi)
+                else:
+                    self._dihedral_quartets = np.zeros((0, 4), dtype=np.int32)
+                    self._dihedral_phi0 = np.zeros(0, dtype=np.float64)
             else:
                 self._dihedral_quartets = np.zeros((0, 4), dtype=np.int32)
                 self._dihedral_phi0 = np.zeros(0, dtype=np.float64)
@@ -1328,9 +1376,9 @@ class SimulationSession:
                 cos_th = np.clip(np.sum(v1 * v2, axis=1) / (r1_safe * r2_safe), -0.999999, 0.999999)
                 th = np.arccos(cos_th)
                 dth = th - self._angle_theta0
-                k_th = 500.0 if self.system.units == "md" else 150.0
+                k_th = 120.0 if self.system.units == "md" else 80.0
                 u += 0.5 * k_th * float(np.sum(dth * dth))
-                sin_th = np.sqrt(np.maximum(1.0 - cos_th * cos_th, 1e-10))
+                sin_th = np.sqrt(np.maximum(1.0 - cos_th * cos_th, 1e-8))
                 coeff = (k_th * dth / sin_th)[:, None]
                 g_i = (v2 / (r1_safe * r2_safe)[:, None]) - ((cos_th / (r1_safe * r1_safe))[:, None] * v1)
                 g_k = (v1 / (r1_safe * r2_safe)[:, None]) - ((cos_th / (r2_safe * r2_safe))[:, None] * v2)
@@ -1355,20 +1403,20 @@ class SimulationSession:
                 n_vec = np.cross(r_kj, r_kl)
                 m2 = np.sum(m * m, axis=1)
                 n2 = np.sum(n_vec * n_vec, axis=1)
-                valid = (m2 > 1e-10) & (n2 > 1e-10)
-                m_len = np.sqrt(np.maximum(m2, 1e-12))
-                n_len = np.sqrt(np.maximum(n2, 1e-12))
+                valid = (m2 > 1e-4) & (n2 > 1e-4)
+                m_len = np.sqrt(np.maximum(m2, 1e-4))
+                n_len = np.sqrt(np.maximum(n2, 1e-4))
                 rkj_safe = np.maximum(rkj_len, 1e-6)
                 rkj2 = np.maximum(rkj_len * rkj_len, 1e-12)
                 cos_phi = np.clip(np.sum(m * n_vec, axis=1) / (m_len * n_len), -0.999999, 0.999999)
                 sin_phi = np.sum(np.cross(m, n_vec) * r_kj, axis=1) / (m_len * n_len * rkj_safe)
                 phi = np.arctan2(sin_phi, cos_phi)
                 dphi = phi - self._dihedral_phi0
-                k_phi = 15.0 if self.system.units == "md" else 2.0
+                k_phi = 4.0 if self.system.units == "md" else 2.0
                 u += float(np.sum(np.where(valid, k_phi * (1.0 - np.cos(dphi)), 0.0)))
                 dE_dphi = np.where(valid, k_phi * np.sin(dphi), 0.0)
-                f_di = - (dE_dphi * (rkj_safe / np.maximum(m2, 1e-12)))[:, None] * m
-                f_dl =   (dE_dphi * (rkj_safe / np.maximum(n2, 1e-12)))[:, None] * n_vec
+                f_di = - (dE_dphi * (rkj_safe / np.maximum(m2, 1e-8)))[:, None] * m
+                f_dl =   (dE_dphi * (rkj_safe / np.maximum(n2, 1e-8)))[:, None] * n_vec
                 coef_ij = (np.sum(r_ij * r_kj, axis=1) / rkj2)[:, None]
                 coef_kl = (np.sum(r_kl * r_kj, axis=1) / rkj2)[:, None]
                 f_dj = (coef_ij - 1.0) * f_di - coef_kl * f_dl
@@ -1421,9 +1469,9 @@ class SimulationSession:
                 cos_th = np.clip(np.sum(v1 * v2, axis=1) / (r1_safe * r2_safe), -0.999999, 0.999999)
                 th = np.arccos(cos_th)
                 dth = th - self._angle_theta0
-                k_th = 500.0 if self.system.units == "md" else 150.0
+                k_th = 120.0 if self.system.units == "md" else 80.0
                 u += 0.5 * k_th * float(np.sum(dth * dth))
-                sin_th = np.sqrt(np.maximum(1.0 - cos_th * cos_th, 1e-10))
+                sin_th = np.sqrt(np.maximum(1.0 - cos_th * cos_th, 1e-8))
                 coeff = (k_th * dth / sin_th)[:, None]
                 g_i = (v2 / (r1_safe * r2_safe)[:, None]) - ((cos_th / (r1_safe * r1_safe))[:, None] * v1)
                 g_k = (v1 / (r1_safe * r2_safe)[:, None]) - ((cos_th / (r2_safe * r2_safe))[:, None] * v2)
@@ -1447,20 +1495,20 @@ class SimulationSession:
                 n_vec = np.cross(r_kj, r_kl)
                 m2 = np.sum(m * m, axis=1)
                 n2 = np.sum(n_vec * n_vec, axis=1)
-                valid = (m2 > 1e-10) & (n2 > 1e-10)
-                m_len = np.sqrt(np.maximum(m2, 1e-12))
-                n_len = np.sqrt(np.maximum(n2, 1e-12))
+                valid = (m2 > 1e-4) & (n2 > 1e-4)
+                m_len = np.sqrt(np.maximum(m2, 1e-4))
+                n_len = np.sqrt(np.maximum(n2, 1e-4))
                 rkj_safe = np.maximum(rkj_len, 1e-6)
                 rkj2 = np.maximum(rkj_len * rkj_len, 1e-12)
                 cos_phi = np.clip(np.sum(m * n_vec, axis=1) / (m_len * n_len), -0.999999, 0.999999)
                 sin_phi = np.sum(np.cross(m, n_vec) * r_kj, axis=1) / (m_len * n_len * rkj_safe)
                 phi = np.arctan2(sin_phi, cos_phi)
                 dphi = phi - self._dihedral_phi0
-                k_phi = 15.0 if self.system.units == "md" else 2.0
+                k_phi = 4.0 if self.system.units == "md" else 2.0
                 u += float(np.sum(np.where(valid, k_phi * (1.0 - np.cos(dphi)), 0.0)))
                 dE_dphi = np.where(valid, k_phi * np.sin(dphi), 0.0)
-                f_di = - (dE_dphi * (rkj_safe / np.maximum(m2, 1e-12)))[:, None] * m
-                f_dl =   (dE_dphi * (rkj_safe / np.maximum(n2, 1e-12)))[:, None] * n_vec
+                f_di = - (dE_dphi * (rkj_safe / np.maximum(m2, 1e-8)))[:, None] * m
+                f_dl =   (dE_dphi * (rkj_safe / np.maximum(n2, 1e-8)))[:, None] * n_vec
                 coef_ij = (np.sum(r_ij * r_kj, axis=1) / rkj2)[:, None]
                 coef_kl = (np.sum(r_kl * r_kj, axis=1) / rkj2)[:, None]
                 f_dj = (coef_ij - 1.0) * f_di - coef_kl * f_dl
@@ -1520,6 +1568,23 @@ class SimulationSession:
                 if len(self._smd_history) > 200:
                     self._smd_history = self._smd_history[-200:]
 
+        enh_suite = getattr(self, "_enhanced_sampling", None)
+        if enh_suite is not None and self.n_real > 0:
+            try:
+                box_diag = np.diag(self.box_H).astype(np.float64)
+                bias_e, bias_f, _ = enh_suite.evaluate(
+                    self.positions[: self.n_real],
+                    box_nm=box_diag,
+                    step=int(self.step_count),
+                    time_ps=float(self.sim_time_ps),
+                    record=False,
+                )
+                self.potential_energy += float(bias_e)
+                if bias_f.shape == (self.n_real, 3):
+                    self.forces[: self.n_real] += bias_f
+            except Exception:
+                pass
+
         act = self.active_mask
         p_act = self.momenta[act]
         m_act = self.masses[act]
@@ -1544,7 +1609,12 @@ class SimulationSession:
                 if not np.isfinite(fmax) or fmax < f_tol:
                     break
                 old_pos = self.positions[:n].copy()
-                self.positions[:n] = old_pos + f * (step_len / fmax)
+                cand_pos = old_pos + f * (step_len / fmax)
+                if self.box_H is not None and abs(float(np.linalg.det(self.box_H))) > 1e-12:
+                    _diag = np.diag(self.box_H)
+                    if np.all(_diag > 0):
+                        cand_pos = np.mod(cand_pos, _diag[None, :])
+                self.positions[:n] = cand_pos
                 self._evaluate_state()
                 if np.isfinite(self.potential_energy) and self.potential_energy < u_prev:
                     u_prev = self.potential_energy
@@ -1846,13 +1916,20 @@ class SimulationSession:
             total_e = float(self.potential_energy + self.kinetic_energy)
             e0 = self._initial_total_energy
             if e0 is not None and math.isfinite(total_e) and math.isfinite(e0):
-                drift_fraction = abs(total_e - e0) / max(abs(e0), 1.0)
+                e_scale = max(
+                    abs(e0),
+                    abs(float(self.potential_energy)) + abs(float(self.kinetic_energy)),
+                    1.5 * max(1, n_act) * self.k_b * max(float(self.temperature), 100.0),
+                    1.0,
+                )
+                drift_fraction = abs(total_e - e0) / e_scale
             else:
                 drift_fraction = 0.0 if math.isfinite(total_e) else float("inf")
 
+            warn_drift = 0.35 if (self.gamma > 0.0 and self.mode != "custom_spline") else 0.05
             if (not math.isfinite(total_e)) or (not math.isfinite(f_max)) or (f_max > 1.0e5):
                 health_status = "clash"
-            elif (f_max > 1.0e4) or (drift_fraction > 0.05):
+            elif (f_max > 1.0e4) or (drift_fraction > warn_drift):
                 health_status = "warning"
             else:
                 health_status = "bounded"
@@ -1931,8 +2008,26 @@ class SimulationSession:
         with self._lock:
             if temperature is not None:
                 self.temperature = max(1.0, float(temperature))
+                act = self.active_mask
+                n_act = int(np.sum(act))
+                if n_act > 0:
+                    p_act = self.momenta[act]
+                    m_act = self.masses[act]
+                    ke_curr = 0.5 * float(np.sum(np.sum(p_act * p_act, axis=1) / m_act))
+                    inst_t = (2.0 * ke_curr) / max(1e-9, 3.0 * n_act * self.k_b)
+                    if inst_t > 1e-6:
+                        scale = math.sqrt(self.temperature / inst_t)
+                        self.momenta[act] *= scale
+                    else:
+                        v_scale = np.sqrt(self.k_b * self.temperature / m_act)[:, None]
+                        vel = self._rng.normal(0.0, 1.0, size=(n_act, 3)) * v_scale
+                        vel -= np.mean(vel, axis=0, keepdims=True)
+                        self.momenta[act] = vel * m_act[:, None]
+                    p_new = self.momenta[act]
+                    self.kinetic_energy = 0.5 * float(np.sum(np.sum(p_new * p_new, axis=1) / m_act))
             if efield_z is not None:
                 self.efield_z = float(efield_z)
+                self._evaluate_state()
             if gcmc_mu is not None:
                 self.gcmc_mu = float(gcmc_mu)
             if strain_rate is not None:
@@ -2182,7 +2277,7 @@ class SimulationSession:
                 # Filter out cross-PBC bonds longer than half box diagonal so cylinders never streak
                 box_diag_half = 0.45 * float(np.min(np.diag(self.box_H))) * self.coord_to_ang
                 b_len = np.linalg.norm(coords_ang[b_arr[:, 0]] - coords_ang[b_arr[:, 1]], axis=1)
-                non_wrap = b_len <= box_diag_half
+                non_wrap = b_len <= min(box_diag_half, 3.2)
                 bp = b_arr[non_wrap]
                 bo = self.bond_orders[non_wrap]
             else:

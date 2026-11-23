@@ -21,31 +21,14 @@ TSYM_HEADER_SIZE = TSYM_HEADER_STRUCT.size  # 48 bytes (8-byte & 4-byte aligned)
 TSYM_FLAG_HAS_ELEMENTS = 0x01
 
 _Z_TO_ELEMENT: Dict[int, str] = {
-    1: "H",
-    2: "He",
-    3: "Li",
-    4: "Be",
-    5: "B",
-    6: "C",
-    7: "N",
-    8: "O",
-    9: "F",
-    10: "Ne",
-    11: "Na",
-    12: "Mg",
-    13: "Al",
-    14: "Si",
-    15: "P",
-    16: "S",
-    17: "Cl",
-    18: "Ar",
-    19: "K",
-    20: "Ca",
-    26: "Fe",
-    30: "Zn",
-    34: "Se",
-    35: "Br",
-    53: "I",
+    1: "H", 2: "He", 3: "Li", 4: "Be", 5: "B", 6: "C", 7: "N", 8: "O", 9: "F", 10: "Ne",
+    11: "Na", 12: "Mg", 13: "Al", 14: "Si", 15: "P", 16: "S", 17: "Cl", 18: "Ar", 19: "K", 20: "Ca",
+    21: "Sc", 22: "Ti", 23: "V", 24: "Cr", 25: "Mn", 26: "Fe", 27: "Co", 28: "Ni", 29: "Cu", 30: "Zn",
+    31: "Ga", 32: "Ge", 33: "As", 34: "Se", 35: "Br", 36: "Kr", 37: "Rb", 38: "Sr", 39: "Y", 40: "Zr",
+    41: "Nb", 42: "Mo", 44: "Ru", 45: "Rh", 46: "Pd", 47: "Ag", 48: "Cd", 49: "In", 50: "Sn", 51: "Sb",
+    52: "Te", 53: "I", 54: "Xe", 55: "Cs", 56: "Ba", 57: "La", 58: "Ce", 60: "Nd", 63: "Eu", 64: "Gd",
+    72: "Hf", 73: "Ta", 74: "W", 75: "Re", 76: "Os", 77: "Ir", 78: "Pt", 79: "Au", 80: "Hg", 81: "Tl",
+    82: "Pb", 83: "Bi", 90: "Th", 92: "U",
 }
 
 _ELEMENT_TO_Z: Dict[str, int] = {sym.upper(): z for z, sym in _Z_TO_ELEMENT.items()}
@@ -85,22 +68,29 @@ class SymmetryAssemblyPayload:
 
 
 def _decode_element_byte(b: int) -> str:
-    """Decode a uint8 element byte supporting both ASCII letters (e.g. ord('C')) and atomic numbers."""
-    if (65 <= b <= 90) or (97 <= b <= 122):
-        return chr(b).upper()
-    return _Z_TO_ELEMENT.get(int(b), "C")
+    """Decode a uint8 element byte supporting ASCII letters, atomic numbers, and high-bit atomic numbers (b >= 128)."""
+    b_int = int(b) & 0xFF
+    if b_int >= 128:
+        return _Z_TO_ELEMENT.get(b_int - 128, "C")
+    if (65 <= b_int <= 90) or (97 <= b_int <= 122):
+        return chr(b_int).upper()
+    return _Z_TO_ELEMENT.get(b_int, "C")
 
 
 def _encode_element_byte(elem: Union[str, int]) -> int:
-    """Encode an element symbol or atomic number into a uint8 byte."""
+    """Encode an element symbol or atomic number into a uint8 byte without colliding with ASCII letters."""
     if isinstance(elem, (int, np.integer)):
-        return int(elem) & 0xFF
+        z_val = int(elem) & 0xFF
+        return (z_val | 0x80) if 65 <= z_val <= 122 else z_val
     cleaned = "".join(ch for ch in str(elem).strip() if ch.isalpha())
     if not cleaned:
         return ord("C")
     if len(cleaned) == 1:
         return ord(cleaned.upper())
-    return _ELEMENT_TO_Z.get(cleaned.upper(), ord("C"))
+    z = _ELEMENT_TO_Z.get(cleaned.upper())
+    if z is None:
+        return ord("C")
+    return (z | 0x80) if z >= 65 else z
 
 
 def pack_tsym_binary(

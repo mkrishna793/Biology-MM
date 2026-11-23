@@ -244,6 +244,9 @@ def parse_pdb_text(text: str) -> Tuple[np.ndarray, List[str], List[Tuple[int, in
     bonds_set: Set[Tuple[int, int]] = set()
     res_names: List[str] = []
     chain_ids: List[str] = []
+    atom_names: List[str] = []
+    group_pdb: List[str] = []
+    seq_ids: List[int] = []
     explicit_box: Optional[Tuple[float, float, float]] = None
 
     for line in text.splitlines():
@@ -263,6 +266,10 @@ def parse_pdb_text(text: str) -> Tuple[np.ndarray, List[str], List[Tuple[int, in
             atom_name = line[12:16].strip()
             res_name = line[17:20].strip()
             chain = line[21:22].strip() or "A"
+            try:
+                res_seq = int(line[22:26].strip())
+            except ValueError:
+                res_seq = 1
             try:
                 x = float(line[30:38]) * 0.1
                 y = float(line[38:46]) * 0.1
@@ -284,6 +291,9 @@ def parse_pdb_text(text: str) -> Tuple[np.ndarray, List[str], List[Tuple[int, in
             elements.append(_clean_element(elem))
             res_names.append(res_name)
             chain_ids.append(chain)
+            atom_names.append(atom_name or _clean_element(elem))
+            group_pdb.append("ATOM" if line.startswith("ATOM") else "HETATM")
+            seq_ids.append(res_seq)
         elif line.startswith("CONECT"):
             parts = line[6:].split()
             if len(parts) >= 2 and parts[0].isdigit():
@@ -302,6 +312,9 @@ def parse_pdb_text(text: str) -> Tuple[np.ndarray, List[str], List[Tuple[int, in
     meta = {
         "res_names": res_names,
         "chain_ids": chain_ids,
+        "atom_names": atom_names,
+        "group_pdb": group_pdb,
+        "seq_id": seq_ids,
         "explicit_box_nm": explicit_box,
     }
     return pos_nm, elements, bonds, meta
@@ -517,6 +530,7 @@ _COVALENT_RADII_NM: Dict[str, float] = {
 
 _NOBLE_GASES: Set[str] = {"HE", "NE", "AR", "KR", "XE"}
 _NONMETALS: Set[str] = {"H", "B", "C", "N", "O", "F", "SI", "P", "S", "CL", "AS", "SE", "BR", "TE", "I"}
+_METALLIC_CLUSTER_METALS: Set[str] = {"AU", "AG", "CU", "PT", "PD", "RH", "IR", "NI", "CO", "FE", "RU", "OS"}
 
 
 def _infer_bonds_pbc(
@@ -534,6 +548,7 @@ def _infer_bonds_pbc(
     radii = np.array([_COVALENT_RADII_NM.get(e, 0.076) for e in elems_u], dtype=np.float64)
     is_noble = np.array([e in _NOBLE_GASES for e in elems_u], dtype=bool)
     is_metal = np.array([(e not in _NONMETALS) and (e not in _NOBLE_GASES) for e in elems_u], dtype=bool)
+    is_cluster_metal = np.array([e in _METALLIC_CLUSTER_METALS for e in elems_u], dtype=bool)
 
     H: Optional[np.ndarray] = None
     H_inv: Optional[np.ndarray] = None
@@ -558,10 +573,11 @@ def _infer_bonds_pbc(
             dr = frac @ H
         dists = np.linalg.norm(dr, axis=1)
         r_sum = radii[i] + radii[i + 1 :]
-        # Scale by bond chemistry: covalent (1.25), metal-ligand (1.18), metal-metal (1.05)
+        # Scale by bond chemistry: covalent (1.25), metal-ligand (1.18), metallic cluster M-M (1.12), oxide M..M (0.95)
         scales = np.full_like(r_sum, 1.25)
         if is_metal[i]:
-            scales = np.where(is_metal[i + 1 :], 1.05, 1.18)
+            mm_scale = np.where(is_cluster_metal[i] & is_cluster_metal[i + 1 :], 1.12, 0.95)
+            scales = np.where(is_metal[i + 1 :], mm_scale, 1.18)
         else:
             scales = np.where(is_metal[i + 1 :], 1.18, 1.25)
 
@@ -641,6 +657,9 @@ def parse_mmcif_text(text: str) -> Tuple[np.ndarray, List[str], List[Tuple[int, 
     elements: List[str] = []
     res_names: List[str] = []
     chain_ids: List[str] = []
+    atom_names: List[str] = []
+    group_pdb: List[str] = []
+    seq_ids: List[int] = []
     symops: List[Tuple[str, str, str]] = []
 
     cell_vals: Dict[str, float] = {
@@ -729,14 +748,22 @@ def parse_mmcif_text(text: str) -> Tuple[np.ndarray, List[str], List[Tuple[int, 
                 except ValueError:
                     continue
                 elem = row.get("type_symbol", "")
+                atom_lbl = row.get("label_atom_id", row.get("auth_atom_id", ""))
                 if not elem or elem in (".", "?"):
-                    atom_lbl = row.get("label_atom_id", row.get("auth_atom_id", "C"))
-                    letters = "".join(c for c in atom_lbl if c.isalpha())
+                    letters = "".join(c for c in (atom_lbl or "C") if c.isalpha())
                     elem = letters[:2] if letters[:2].upper() in _TWO_LETTER_ELEMENTS else letters[:1] or "C"
+                raw_seq = row.get("label_seq_id", row.get("auth_seq_id", "1"))
+                try:
+                    seq_val = int(raw_seq) if raw_seq not in (".", "?", "") else 1
+                except ValueError:
+                    seq_val = 1
                 coords.append([x, y, z])
                 elements.append(_clean_element(elem))
-                res_names.append(row.get("label_comp_id", "UNK"))
-                chain_ids.append(row.get("label_asym_id", "A"))
+                res_names.append(row.get("label_comp_id", row.get("auth_comp_id", "UNK")))
+                chain_ids.append(row.get("label_asym_id", row.get("auth_asym_id", "A")))
+                atom_names.append(atom_lbl if atom_lbl not in (".", "?", "") else _clean_element(elem))
+                group_pdb.append(group)
+                seq_ids.append(seq_val)
                 continue
 
             # Crystallographic / MOF CIF fractional coordinate path (_atom_site_fract_x/y/z)
@@ -825,11 +852,14 @@ def parse_mmcif_text(text: str) -> Tuple[np.ndarray, List[str], List[Tuple[int, 
     else:
         pos_nm = np.asarray(coords, dtype=np.float64)
         filtered_disorder = 0
-        inferred_bonds = []
+        inferred_bonds = _infer_bonds_pbc(pos_nm, elements, box_nm=box_nm) if 1 < len(elements) <= 8000 else []
 
     meta: Dict[str, Any] = {
         "res_names": res_names,
         "chain_ids": chain_ids,
+        "atom_names": atom_names if atom_names else None,
+        "group_pdb": group_pdb if group_pdb else None,
+        "seq_id": seq_ids if seq_ids else None,
         "crystallographic": bool(fract_coords and not coords),
         "n_symops": len(symops),
         "filtered_disordered_sites": filtered_disorder,
@@ -1741,6 +1771,8 @@ def _finalize_atomic_system(
         "res_names": meta.get("res_names"),
         "chain_ids": meta.get("chain_ids"),
         "atom_names": meta.get("atom_names"),
+        "group_pdb": meta.get("group_pdb"),
+        "seq_id": meta.get("seq_id"),
         "coords_synthesized": bool(meta.get("coords_synthesized", False)),
     }
     for extra_key in ("family", "schema", "fixture"):
