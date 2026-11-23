@@ -186,7 +186,7 @@ def build_mmcif_from_session(session, channel: Optional[str] = None) -> str:
                 comp_id = "MOL"
                 asym_id = "A"
                 ent_id = "1"
-                seq_id = cif_id if is_crystal else 1
+                seq_id = cif_id
                 entities_seen.setdefault("1", ("non-polymer", "Simulation_System"))
 
         asyms_seen.setdefault(asym_id, ent_id)
