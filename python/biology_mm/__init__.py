@@ -70,7 +70,7 @@ from .trajectory_io import (
     write_xtc,
 )
 
-__version__ = "2.0.0"
+__version__ = "2.5.0"
 
 __all__ = [
     "AlphaFoldConfidence",
