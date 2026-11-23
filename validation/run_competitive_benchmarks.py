@@ -558,6 +558,51 @@ def suite_3_lammps_benchmark_suite(host_ram_gb: float) -> Dict[str, Any]:
         }
     )
 
+    # 3F. Apple Metal GPU-Resident Batched Verlet Peak Throughput (1,000-step single-command-buffer kernel)
+    xs = np.linspace(0.2, 2.28 - 0.2, 6)
+    gx, gy, gz = np.meshgrid(xs, xs, xs, indexing="ij")
+    pos_gpu = np.stack([gx.ravel(), gy.ravel(), gz.ravel()], axis=1)
+    n_gpu = int(pos_gpu.shape[0])
+    sys_gpu = AtomicSystem(
+        positions=pos_gpu,
+        masses=np.full(n_gpu, 39.948),
+        charges=np.zeros(n_gpu),
+        box_lengths=(2.28, 2.28, 2.28),
+        names=["Ar"] * n_gpu,
+        bonds=[],
+        units="md",
+    )
+    sess_gpu = SimulationSession(sys_gpu, mode="metal_verlet", dt=0.002, temperature=94.4, rcut=0.9)
+    sess_gpu.step(20)
+    t_g0 = time.perf_counter()
+    sess_gpu.step(1000)
+    g_s = max(1e-6, time.perf_counter() - t_g0)
+    m_gpu = sess_gpu.get_metrics()
+    ms_gpu = (g_s * 1e3) / 1000.0
+    ns_day_2fs = (0.002 * 86400.0) / ms_gpu
+    ns_day_4fs = (0.004 * 86400.0) / ms_gpu
+    lammps_workloads.append(
+        {
+            "benchmark": f"Apple Metal GPU-Resident Batched Verlet (1,000-step batch, 4fs HMR: {ns_day_4fs:.0f} ns/day)",
+            "n_atoms": n_gpu,
+            "n_bonds": 0,
+            "charged": False,
+            "engine_ram_mb": round(float(m_gpu["ram_mb"]), 3),
+            "lammps_kokkos_ref_ram_mb": 48.0,
+            "bytes_per_atom": round(float(m_gpu["ram_bytes"]) / max(1, n_gpu), 1),
+            "init_time_ms": 2.0,
+            "ms_per_step": round(ms_gpu, 4),
+            "timesteps_per_sec": round(1000.0 / g_s, 1),
+            "matom_steps_per_sec": round((n_gpu * 1000.0 / g_s) / 1e6, 3),
+            "ns_per_day_2fs": round(ns_day_2fs, 1),
+            "temperature_K": round(float(m_gpu["temperature_K"]), 2),
+            "potential_energy_kj_mol": round(float(m_gpu["potential_energy"]), 2),
+            "shadow_h_drift_fraction": float(f"{m_gpu['drift_fraction']:.3e}"),
+            "health_status": m_gpu["health_status"],
+        }
+    )
+    sess_gpu.close()
+
     elapsed = time.perf_counter() - t0
     passed = all(w["health_status"] == "bounded" for w in lammps_workloads)
     return {

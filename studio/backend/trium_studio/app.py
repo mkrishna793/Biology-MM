@@ -470,11 +470,13 @@ def create_app(dist_dir: Optional[Path] = None) -> FastAPI:
             raise HTTPException(status_code=400, detail=f"Incomplete coordinates: expected {coords_bytes} bytes, got {len(body) - offset}")
 
         mode_sel = str(storage_mode or "auto").strip().lower()
-        if mode_sel not in ("auto", "tryte-all-atom", "full", "float64-full"):
+        if mode_sel not in ("auto", "symmetry-compact", "tryte-all-atom", "full", "float64-full"):
             raise HTTPException(
                 status_code=400,
-                detail=f"Invalid storage_mode '{storage_mode}'; expected 'auto', 'tryte-all-atom', or 'float64-full'",
+                detail=f"Invalid storage_mode '{storage_mode}'; expected 'auto', 'symmetry-compact', 'tryte-all-atom', or 'float64-full'",
             )
+        if mode_sel == "symmetry-compact":
+            mode_sel = "auto"
 
         coords_ang = np.frombuffer(body[offset : offset + coords_bytes], dtype=np.float32).reshape(n_atoms, 3)
         offset += coords_bytes
@@ -755,11 +757,13 @@ def create_app(dist_dir: Optional[Path] = None) -> FastAPI:
     ) -> Dict[str, Any]:
         """Ingest raw structure bytes (.pdb, .cif/.mmcif, .gro, .xyz, .data) without JSON size bottlenecks."""
         mode_sel = str(storage_mode or "auto").strip().lower()
-        if mode_sel not in ("auto", "tryte-all-atom", "full", "float64-full"):
+        if mode_sel not in ("auto", "symmetry-compact", "tryte-all-atom", "full", "float64-full"):
             raise HTTPException(
                 status_code=400,
-                detail=f"Invalid storage_mode '{storage_mode}'; expected 'auto', 'tryte-all-atom', or 'float64-full'",
+                detail=f"Invalid storage_mode '{storage_mode}'; expected 'auto', 'symmetry-compact', 'tryte-all-atom', or 'float64-full'",
             )
+        if mode_sel == "symmetry-compact":
+            mode_sel = "auto"
         content_type = (request.headers.get("content-type") or "").lower()
         if "multipart/form-data" in content_type:
             form = await request.form()
