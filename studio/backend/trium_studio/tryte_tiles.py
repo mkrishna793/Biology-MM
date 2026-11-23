@@ -690,11 +690,32 @@ class TryteTileFullAtomSession:
 
         # Reorder all atoms once along the continuous 3D Radix-3 Peano curve so every
         # contiguous 27-atom block forms a compact, zero-Z-jump Tryte Tile.
+        self.structure_metadata: Dict[str, Any] = dict(structure_metadata or {})
+        self.structure_metadata.setdefault("storage_mode", "tryte-all-atom")
+
         if n > 0:
+            if not bonds and 1 < n <= 8000:
+                try:
+                    from .structure_loader import _infer_bonds_pbc
+                    elem_names = [_Z_TO_SYM_LUT[int(z)] for z in z_in]
+                    box_for_bonds = (
+                        np.diag(np.asarray(box_nm, dtype=np.float64))
+                        if (box_nm is not None and len(box_nm) == 3 and all(float(v) > 0.0 for v in box_nm))
+                        else None
+                    )
+                    bonds = _infer_bonds_pbc(pos_in.astype(np.float64), elem_names, box_nm=box_for_bonds)
+                except Exception:
+                    pass
             perm = peano_order(pos_in, levels=peano_levels)
             self.positions_nm: np.ndarray = np.ascontiguousarray(pos_in[perm], dtype=np.float32)
             self.atomic_numbers: np.ndarray = np.ascontiguousarray(z_in[perm], dtype=np.uint8)
             self.charges: np.ndarray = np.ascontiguousarray(q_in[perm], dtype=np.float32)
+
+            # Reorder any per-atom metadata arrays to match Peano atom ordering
+            for mkey in ("res_names", "atom_names", "chain_ids", "seq_id", "res_ids", "group_pdb", "atom_id", "comp_id", "asym_id", "entity_id"):
+                mval = self.structure_metadata.get(mkey)
+                if isinstance(mval, (list, tuple)) and len(mval) == n:
+                    self.structure_metadata[mkey] = [mval[int(p)] for p in perm]
 
             # Remap explicit covalent bonds into Peano order if provided
             if bonds:
@@ -762,20 +783,34 @@ class TryteTileFullAtomSession:
         self.gcmc_mu: float = -2.0
         self.strain_rate: float = 0.0
         self.active_channel: int = 0
-        self.structure_metadata: Dict[str, Any] = dict(structure_metadata or {})
-        self.structure_metadata.setdefault("storage_mode", "tryte-all-atom")
+        self._is_periodic_box: bool = False
 
         # World-space bounding box (nm)
         if n > 0:
             min_nm = np.min(self.positions_nm, axis=0).astype(np.float64)
             max_nm = np.max(self.positions_nm, axis=0).astype(np.float64)
             span_nm = max_nm - min_nm
-            self._box_origin_nm: np.ndarray = (min_nm - 0.9).astype(np.float32)
-            if box_nm is not None and len(box_nm) == 3 and all(float(v) > 0.0 for v in box_nm):
-                bx, by, bz = (max(float(box_nm[d]), float(span_nm[d]) + 1.8, 2.8) for d in range(3))
+            if (
+                box_nm is not None
+                and len(box_nm) == 3
+                and all(float(v) > 0.3 for v in box_nm)
+                and all(float(box_nm[d]) >= float(span_nm[d]) - 0.25 for d in range(3))
+            ):
+                bx, by, bz = (float(box_nm[0]), float(box_nm[1]), float(box_nm[2]))
+                self._box_origin_nm: np.ndarray = np.zeros(3, dtype=np.float32)
+                self._is_periodic_box = True
+                self.positions_nm = np.mod(
+                    self.positions_nm,
+                    np.array([bx, by, bz], dtype=np.float32)[None, :],
+                ).astype(np.float32, copy=False)
+                default_center_ang = (0.5 * bx * 10.0, 0.5 * by * 10.0, 0.5 * bz * 10.0)
             else:
-                bx, by, bz = (max(float(span_nm[d]) + 1.8, 2.8) for d in range(3))
-            default_center_ang = tuple(float(v) for v in (0.5 * (min_nm + max_nm) * 10.0))
+                self._box_origin_nm = (min_nm - 0.9).astype(np.float32)
+                if box_nm is not None and len(box_nm) == 3 and all(float(v) > 0.0 for v in box_nm):
+                    bx, by, bz = (max(float(box_nm[d]), float(span_nm[d]) + 1.8, 2.8) for d in range(3))
+                else:
+                    bx, by, bz = (max(float(span_nm[d]) + 1.8, 2.8) for d in range(3))
+                default_center_ang = tuple(float(v) for v in (0.5 * (min_nm + max_nm) * 10.0))
         else:
             self._box_origin_nm = np.zeros(3, dtype=np.float32)
             bx, by, bz = 3.0, 3.0, 3.0
@@ -929,8 +964,14 @@ class TryteTileFullAtomSession:
     # Compatibility properties for cif_builder / generic callers
     @property
     def positions(self) -> np.ndarray:
-        """Streamed-subset positions in nm (compat view for `cif_builder.py`)."""
-        return self.positions_nm[self._stream_atom_indices] if self._stream_atom_indices.size > 0 else np.zeros((0, 3), dtype=np.float32)
+        """Streamed-subset positions in nm (compat view for `cif_builder.py`, wrapped into periodic cell when periodic)."""
+        if self._stream_atom_indices.size == 0:
+            return np.zeros((0, 3), dtype=np.float32)
+        pos_sub = self.positions_nm[self._stream_atom_indices]
+        if self._is_periodic_box:
+            box_diag = np.diag(self.box_H).astype(np.float32)
+            return np.mod(pos_sub, box_diag[None, :]).astype(np.float32, copy=False)
+        return pos_sub
 
     @property
     def active_mask(self) -> np.ndarray:
@@ -1596,25 +1637,49 @@ class TryteTileFullAtomSession:
                 return report
 
             pos_aa = self.positions_nm[aa_idx].astype(np.float64)
-            min_p = np.min(pos_aa, axis=0) - 1.2
-            max_p = np.max(pos_aa, axis=0) + 1.2
-            box_L = np.maximum(max_p - min_p, 3.0)
-            local_pos = pos_aa - min_p[None, :]
+            if self._is_periodic_box:
+                min_p = np.zeros(3, dtype=np.float64)
+                box_L = np.diag(self.box_H).astype(np.float64)
+                local_pos = np.mod(pos_aa, box_L[None, :])
+            else:
+                min_p = np.min(pos_aa, axis=0) - 1.2
+                max_p = np.max(pos_aa, axis=0) + 1.2
+                box_L = np.maximum(max_p - min_p, 3.0)
+                local_pos = pos_aa - min_p[None, :]
             z_aa = self.atomic_numbers[aa_idx]
             sig_aa = ELEMENT_LUT_SIGMA[z_aa].astype(np.float64)
             eps_aa = ELEMENT_LUT_EPSILON[z_aa].astype(np.float64)
+
+            # Build exclusions for active subset from explicit covalent bonds + active ENM pairs
+            exclusions_aa: List[Tuple[int, int]] = []
+            if self._enm_i.size > 0:
+                exclusions_aa.extend(zip(self._enm_i.tolist(), self._enm_j.tolist()))
+            if self._explicit_bonds.shape[0] > 0:
+                if n_aa == self.n_atoms and np.array_equal(aa_idx, np.arange(n_aa, dtype=np.int32)):
+                    exclusions_aa.extend((int(u), int(v)) for u, v in self._explicit_bonds)
+                else:
+                    inv_aa = {int(a): p for p, a in enumerate(aa_idx)}
+                    for u_raw, v_raw in self._explicit_bonds:
+                        pu = inv_aa.get(int(u_raw))
+                        pv = inv_aa.get(int(v_raw))
+                        if pu is not None and pv is not None and pu != pv:
+                            exclusions_aa.append((pu, pv))
 
             relaxed_local, report = softcore_relax_clashes(
                 positions_nm=local_pos,
                 box_nm=box_L,
                 sigma_nm=sig_aa,
                 epsilon_kj=eps_aa,
+                exclusions=exclusions_aa or None,
                 max_steps=max_steps,
                 max_force_cap=max_force_cap,
                 alpha_sc=alpha_sc,
                 lam=lam,
             )
-            self.positions_nm[aa_idx] = (relaxed_local + min_p[None, :]).astype(np.float32)
+            if self._is_periodic_box:
+                self.positions_nm[aa_idx] = np.mod(relaxed_local, box_L[None, :]).astype(np.float32)
+            else:
+                self.positions_nm[aa_idx] = (relaxed_local + min_p[None, :]).astype(np.float32)
 
             # Refresh tile lanes, reference residual moments, and active ENM
             update_tryte_tile_lanes(
@@ -1700,8 +1765,19 @@ class TryteTileFullAtomSession:
         with self._lock:
             if temperature is not None:
                 self.temperature = max(1.0, float(temperature))
+                if self.n_atoms > 0:
+                    ke_curr = self._compute_kinetic_energy()
+                    inst_t = (2.0 * ke_curr) / max(1e-9, 3.0 * self.n_atoms * self.k_b)
+                    if inst_t > 1e-6:
+                        scale = np.float32(math.sqrt(self.temperature / inst_t))
+                        self.momenta *= scale
+                        self.kinetic_energy = self._compute_kinetic_energy()
+                    else:
+                        self._init_boltzmann_momenta()
+                        self.kinetic_energy = self._compute_kinetic_energy()
             if efield_z is not None:
                 self.efield_z = float(efield_z)
+                self._evaluate_state()
             if gcmc_mu is not None:
                 self.gcmc_mu = float(gcmc_mu)
             if strain_rate is not None:
@@ -1987,7 +2063,8 @@ class TryteTileFullAtomSession:
         with self._lock:
             idx = self._stream_atom_indices
             k = int(idx.size)
-            coords_ang = (self.positions_nm[idx] * np.float32(self.coord_to_ang)).astype(np.float32) if k > 0 else np.zeros((0, 3), dtype=np.float32)
+            pos_sub = self.positions
+            coords_ang = (pos_sub * np.float32(self.coord_to_ang)).astype(np.float32) if k > 0 else np.zeros((0, 3), dtype=np.float32)
             z_sub = self.atomic_numbers[idx] if k > 0 else np.zeros(0, dtype=np.uint8)
             radii = ELEMENT_LUT_RADIUS_ANG[z_sub] if k > 0 else np.zeros(0, dtype=np.float32)
             tile_ids = (idx // self.tile_size).astype(np.uint32) if k > 0 else np.zeros(0, dtype=np.uint32)
@@ -2021,7 +2098,8 @@ class TryteTileFullAtomSession:
             ch_idx = PHYSICS_CHANNEL_NAMES.index(ch_name)
             idx = self._stream_atom_indices
             k = int(idx.size)
-            coords_ang = (self.positions_nm[idx] * np.float32(self.coord_to_ang)).astype(np.float32) if k > 0 else np.zeros((0, 3), dtype=np.float32)
+            pos_sub = self.positions
+            coords_ang = (pos_sub * np.float32(self.coord_to_ang)).astype(np.float32) if k > 0 else np.zeros((0, 3), dtype=np.float32)
             scalars = self.compute_scalar_channel(ch_name, atom_indices=idx)
             box_ang = (self.box_H * self.coord_to_ang).astype(np.float32)
 
@@ -2070,7 +2148,7 @@ class TryteTileFullAtomSession:
             idx = self._stream_atom_indices
             k_tot = int(idx.size)
             if k_tot > 0:
-                coords_ang = (self.positions_nm[idx] * np.float32(self.coord_to_ang)).astype(np.float32)
+                coords_ang = (self.positions * np.float32(self.coord_to_ang)).astype(np.float32)
                 frc_sub = self.forces[idx]
                 f_mags = np.linalg.norm(frc_sub, axis=1)
                 k = min(int(max_vectors), k_tot)
@@ -2083,12 +2161,26 @@ class TryteTileFullAtomSession:
                 dirs = np.zeros((0, 3), dtype=np.float32)
                 mags = np.zeros(0, dtype=np.float32)
 
+            active_bonds = self.bonds
+            if active_bonds and k_tot > 0:
+                bp_all = np.asarray(active_bonds, dtype=np.uint32)
+                p1 = coords_ang[bp_all[:, 0]]
+                p2 = coords_ang[bp_all[:, 1]]
+                d_b = np.linalg.norm(p1 - p2, axis=1)
+                box_diag_half = min(0.45 * float(np.min(np.diag(self.box_H)) * self.coord_to_ang), 3.2)
+                keep_b = d_b <= box_diag_half
+                bp = bp_all[keep_b]
+                bo = np.ones(bp.shape[0], dtype=np.float32)
+            else:
+                bp = np.zeros((0, 2), dtype=np.uint32)
+                bo = np.zeros(0, dtype=np.float32)
+
             return pack_overlay_vectors(
                 vector_starts=starts,
                 vector_dirs=dirs,
                 vector_mags=mags,
-                bond_pairs=np.zeros((0, 2), dtype=np.uint32),
-                bond_orders=np.zeros(0, dtype=np.float32),
+                bond_pairs=bp,
+                bond_orders=bo,
                 frame_id=self.step_count,
                 sim_time_ps=self.sim_time_ps,
             )

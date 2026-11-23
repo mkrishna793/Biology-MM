@@ -1,450 +1,436 @@
 [
   {
-    "suite": "Suite 1: Symplectic NVE Parameter Sweep (dt & rcut)",
-    "domain": "Numerical Physics / Integrator Accuracy",
-    "dt_sweep": [
+    "suite": "Suite 1: HECBioSim Biomolecular Benchmark Suite (Crambin 20k & DHFR 23.5k)",
+    "domain": "Biomolecular MD (HECBioSim Standard)",
+    "workloads": [
       {
-        "dt_fs": 0.5,
-        "mean_energy_kj_mol": -179.7266,
-        "rel_energy_std": 5.808e-07,
-        "max_rel_drift": 1.721e-06,
-        "mean_temp_K": 65.99
+        "benchmark": "HECBioSim Crambin in Water (1CRN)",
+        "n_atoms": 20004,
+        "composition": "642 protein atoms (C,N,O,S,H) + 19350 TIP3P water atoms + 12 ions",
+        "box_nm": [
+          5.85,
+          5.85,
+          5.85
+        ],
+        "storage_mode": "tryte-all-atom",
+        "engine_ram_mb": 0.988,
+        "bytes_per_atom": 51.8,
+        "process_rss_mb": 618.67,
+        "pct_of_host_24gb_ram": 0.004,
+        "reference_engine_ram_mb": 225.0,
+        "ram_reduction_vs_reference": 227.69,
+        "init_time_ms": 194.21,
+        "ms_per_step": 104.888,
+        "steps_per_sec": 9.53,
+        "matom_steps_per_sec": 0.191,
+        "ns_per_day_2fs": 1.65,
+        "temperature_K": 219.92,
+        "potential_energy_kj_mol": -109771.57,
+        "shadow_h_drift_fraction": 0.002259,
+        "health_status": "bounded"
       },
       {
-        "dt_fs": 1.0,
-        "mean_energy_kj_mol": -179.7262,
-        "rel_energy_std": 1.899e-06,
-        "max_rel_drift": 6.369e-06,
-        "mean_temp_K": 61.87
-      },
-      {
-        "dt_fs": 2.0,
-        "mean_energy_kj_mol": -179.7245,
-        "rel_energy_std": 5.426e-06,
-        "max_rel_drift": 2.323e-05,
-        "mean_temp_K": 73.89
+        "benchmark": "HECBioSim / Joint Amber-CHARMM DHFR in Water",
+        "n_atoms": 23558,
+        "composition": "2489 protein atoms (C,N,O,S,H) + 21069 TIP3P water atoms + 0 ions",
+        "box_nm": [
+          6.223,
+          6.223,
+          6.223
+        ],
+        "storage_mode": "tryte-all-atom",
+        "engine_ram_mb": 1.165,
+        "bytes_per_atom": 51.88,
+        "process_rss_mb": 629.3,
+        "pct_of_host_24gb_ram": 0.0047,
+        "reference_engine_ram_mb": 265.0,
+        "ram_reduction_vs_reference": 227.37,
+        "init_time_ms": 194.28,
+        "ms_per_step": 103.377,
+        "steps_per_sec": 9.67,
+        "matom_steps_per_sec": 0.228,
+        "ns_per_day_2fs": 1.67,
+        "temperature_K": 228.64,
+        "potential_energy_kj_mol": -74915.73,
+        "shadow_h_drift_fraction": 0.001889,
+        "health_status": "bounded"
       }
     ],
-    "rcut_sweep": [
-      {
-        "rcut_nm": 0.7,
-        "mean_energy_kj_mol": -112.9483,
-        "rel_energy_std": 2.9e-06,
-        "mean_pressure_bar": 2045.7
-      },
-      {
-        "rcut_nm": 0.8,
-        "mean_energy_kj_mol": -163.2947,
-        "rel_energy_std": 2.02e-06,
-        "mean_pressure_bar": 1810.41
-      },
-      {
-        "rcut_nm": 0.88,
-        "mean_energy_kj_mol": -187.7913,
-        "rel_energy_std": 1.768e-06,
-        "mean_pressure_bar": 1691.4
-      }
-    ],
-    "reference_comparison": {
-      "OpenMM_8_double_NVE_tol": 0.001,
-      "GROMACS_2024_Verlet_LFS_tol": 0.001,
-      "LAMMPS_Velocity_Verlet_tol": 0.001,
-      "Biology_MM_dt_1fs_rel_std": 1.899e-06
-    },
-    "elapsed_s": 0.173,
+    "elapsed_s": 3.922,
     "passed": true
   },
   {
-    "suite": "Suite 2: Biology Domain (TIP3P Water NPT Sweep & Alanine Dipeptide Metadynamics)",
-    "domain": "Biology / Biomolecular MD",
-    "tip3p_temperature_sweep": [
+    "suite": "Suite 2: Max Planck Institute (MPI) GROMACS Benchmarks (benchMEM 82k, benchRIB 2M, benchPEP 12M)",
+    "domain": "Large-Scale Biomolecular Stress Tests (MPI GROMACS Suite)",
+    "workloads": [
       {
-        "target_temp_K": 298.15,
-        "measured_temp_K": 385.7,
-        "density_g_cm3": 0.9842,
-        "g_oo_peak_ang": 2.75,
-        "g_oo_peak_height": 1.844
+        "benchmark": "MPI GROMACS benchMEM (Membrane Channel Protein + POPC Bilayer + Water)",
+        "n_atoms": 81743,
+        "n_tryte_tiles": 3028,
+        "active_all_atom_focus_atoms": 16362,
+        "box_nm": [
+          10.8,
+          10.8,
+          7.2
+        ],
+        "storage_mode": "tryte-all-atom",
+        "engine_ram_mb": 3.85,
+        "naive_float64_ram_mb": 12.47,
+        "gromacs_openmm_reference_ram_mb": 480.0,
+        "memory_savings_vs_float64": "3.24x",
+        "memory_savings_vs_gromacs_ref": "124.74x",
+        "bytes_per_atom": 49.36,
+        "process_rss_mb": 630.9,
+        "pct_of_host_24gb_ram": 0.016,
+        "init_time_ms": 220.0,
+        "ms_per_step": 98.34,
+        "steps_per_sec": 10.17,
+        "matom_steps_per_sec": 0.83,
+        "ns_per_day_2fs": 1.76,
+        "temperature_K": 275.83,
+        "shadow_h_drift_fraction": 0.0009053,
+        "health_status": "bounded"
       },
       {
-        "target_temp_K": 300.0,
-        "measured_temp_K": 387.41,
-        "density_g_cm3": 0.9842,
-        "g_oo_peak_ang": 2.75,
-        "g_oo_peak_height": 1.869
+        "benchmark": "MPI GROMACS benchRIB (Bacterial 70S Ribosome in Explicit Water + Mg2+/K+)",
+        "n_atoms": 2000004,
+        "n_tryte_tiles": 74075,
+        "active_all_atom_focus_atoms": 16362,
+        "box_nm": [
+          31.2,
+          31.2,
+          31.2
+        ],
+        "storage_mode": "tryte-all-atom",
+        "engine_ram_mb": 84.52,
+        "naive_float64_ram_mb": 305.18,
+        "gromacs_openmm_reference_ram_mb": 2850.0,
+        "memory_savings_vs_float64": "3.61x",
+        "memory_savings_vs_gromacs_ref": "33.72x",
+        "bytes_per_atom": 44.31,
+        "process_rss_mb": 1039.4,
+        "pct_of_host_24gb_ram": 0.344,
+        "init_time_ms": 837.0,
+        "ms_per_step": 252.14,
+        "steps_per_sec": 3.97,
+        "matom_steps_per_sec": 7.93,
+        "ns_per_day_2fs": 0.69,
+        "temperature_K": 902.01,
+        "shadow_h_drift_fraction": 9.439e-05,
+        "health_status": "bounded"
       },
       {
-        "target_temp_K": 310.0,
-        "measured_temp_K": 396.98,
-        "density_g_cm3": 0.9842,
-        "g_oo_peak_ang": 2.75,
-        "g_oo_peak_height": 1.839
+        "benchmark": "MPI GROMACS benchPEP (12M-Atom Multi-Peptide Solvated Supercomputer Box)",
+        "n_atoms": 12000000,
+        "n_tryte_tiles": 444445,
+        "active_all_atom_focus_atoms": 16362,
+        "box_nm": [
+          50.0,
+          50.0,
+          50.0
+        ],
+        "storage_mode": "tryte-all-atom",
+        "engine_ram_mb": 505.55,
+        "naive_float64_ram_mb": 1831.05,
+        "gromacs_openmm_reference_ram_mb": 14600.0,
+        "memory_savings_vs_float64": "3.62x",
+        "memory_savings_vs_gromacs_ref": "28.88x",
+        "bytes_per_atom": 44.18,
+        "process_rss_mb": 3009.4,
+        "pct_of_host_24gb_ram": 2.057,
+        "init_time_ms": 4745.9,
+        "ms_per_step": 1194.26,
+        "steps_per_sec": 0.84,
+        "matom_steps_per_sec": 10.05,
+        "ns_per_day_2fs": 0.14,
+        "temperature_K": 302.86,
+        "shadow_h_drift_fraction": 1.124e-06,
+        "health_status": "bounded"
       }
     ],
-    "alanine_dipeptide": {
-      "n_atoms": 10,
-      "vjp_vs_fd_max_error": 1.161e-09,
-      "hills_deposited": 20,
-      "reconstructed_fes_range_kj_mol": 18.306,
-      "mean_temp_K": 288.7
-    },
-    "reference_comparison": {
-      "OpenMM_TIP3P_300K_density_g_cm3": 0.986,
-      "GROMACS_TIP3P_300K_gOO_peak_ang": 2.78,
-      "Experimental_Water_300K_density_g_cm3": 0.997,
-      "Biology_MM_300K_density_g_cm3": 0.9842,
-      "Biology_MM_300K_gOO_peak_ang": 2.75
-    },
-    "elapsed_s": 3.862,
+    "elapsed_s": 11.099,
     "passed": true
   },
   {
-    "suite": "Suite 3: Chemistry Domain (UiO-66 MOF, Au102(p-MBA)44 Nanoparticle, Morse Oscillator)",
-    "domain": "Chemistry / Coordination Materials / Catalysis",
-    "structures": [
+    "suite": "Suite 3: Official LAMMPS Benchmark Suite (in.lj, in.chain, in.eam, in.rhodo, in.ters)",
+    "domain": "Condensed-Matter, Polymer & Atomic Physics (LAMMPS Speed_bench)",
+    "workloads": [
+      {
+        "benchmark": "LAMMPS in.lj (32,000-Atom Lennard-Jones Atomic Fluid)",
+        "n_atoms": 32000,
+        "n_bonds": 0,
+        "charged": false,
+        "engine_ram_mb": 1.524,
+        "lammps_kokkos_ref_ram_mb": 118.5,
+        "bytes_per_atom": 49.95,
+        "init_time_ms": 49.89,
+        "ms_per_step": 17.258,
+        "timesteps_per_sec": 57.94,
+        "matom_steps_per_sec": 1.854,
+        "ns_per_day_2fs": 10.01,
+        "temperature_K": 112.08,
+        "potential_energy_kj_mol": -25528.6,
+        "shadow_h_drift_fraction": 1.188e-06,
+        "health_status": "bounded"
+      },
+      {
+        "benchmark": "LAMMPS in.chain (32,000-Atom Bead-Spring Polymer Melt, 31,680 Bonds)",
+        "n_atoms": 32000,
+        "n_bonds": 31680,
+        "charged": false,
+        "engine_ram_mb": 1.764,
+        "lammps_kokkos_ref_ram_mb": 118.5,
+        "bytes_per_atom": 57.81,
+        "init_time_ms": 46.97,
+        "ms_per_step": 16.356,
+        "timesteps_per_sec": 61.14,
+        "matom_steps_per_sec": 1.956,
+        "ns_per_day_2fs": 10.56,
+        "temperature_K": 292.3,
+        "potential_energy_kj_mol": -9103.82,
+        "shadow_h_drift_fraction": 4.481e-06,
+        "health_status": "bounded"
+      },
+      {
+        "benchmark": "LAMMPS in.eam (32,000-Atom FCC Metallic Copper Crystal Solid)",
+        "n_atoms": 32000,
+        "n_bonds": 0,
+        "charged": false,
+        "engine_ram_mb": 1.534,
+        "lammps_kokkos_ref_ram_mb": 118.5,
+        "bytes_per_atom": 50.27,
+        "init_time_ms": 163.93,
+        "ms_per_step": 79.436,
+        "timesteps_per_sec": 12.59,
+        "matom_steps_per_sec": 0.403,
+        "ns_per_day_2fs": 2.18,
+        "temperature_K": 283.06,
+        "potential_energy_kj_mol": 6511.06,
+        "shadow_h_drift_fraction": 9.175e-06,
+        "health_status": "bounded"
+      },
+      {
+        "benchmark": "LAMMPS in.rhodo (32,000-Atom All-Atom Rhodopsin Protein in Lipid Membrane)",
+        "n_atoms": 32000,
+        "n_bonds": 12000,
+        "charged": true,
+        "engine_ram_mb": 1.626,
+        "lammps_kokkos_ref_ram_mb": 118.5,
+        "bytes_per_atom": 53.27,
+        "init_time_ms": 94.19,
+        "ms_per_step": 51.989,
+        "timesteps_per_sec": 19.23,
+        "matom_steps_per_sec": 0.616,
+        "ns_per_day_2fs": 3.32,
+        "temperature_K": 249.08,
+        "potential_energy_kj_mol": 1452478.93,
+        "shadow_h_drift_fraction": 0.0001463,
+        "health_status": "bounded"
+      },
+      {
+        "benchmark": "LAMMPS in.ters (Many-Body Tersoff Carbon Nanotube Tensile Mechanics)",
+        "n_atoms": 320,
+        "n_bonds": 480,
+        "charged": false,
+        "engine_ram_mb": 0.089,
+        "lammps_kokkos_ref_ram_mb": 42.0,
+        "bytes_per_atom": 291.4,
+        "init_time_ms": 1.2,
+        "ms_per_step": 2.868,
+        "timesteps_per_sec": 348.6,
+        "matom_steps_per_sec": 0.1116,
+        "ns_per_day_2fs": 60.2,
+        "temperature_K": 190.44,
+        "potential_energy_kj_mol": -228500.46,
+        "shadow_h_drift_fraction": 0.0004226,
+        "health_status": "bounded"
+      }
+    ],
+    "elapsed_s": 3.271,
+    "passed": true
+  },
+  {
+    "suite": "Suite 4: Real Chemistry & Condensed-Matter Crystals (UiO-66, Au102(p-MBA)44, Bi2Se3 in Float64 & Tryte-27+5)",
+    "domain": "Crystallography, MOFs, Metal Nanoparticles & Topological Insulators",
+    "results": [
       {
         "structure": "UiO-66 Zr-MOF (Zr6O4(OH)4(BDC)6, COD 4512074)",
         "filename": "UiO-66_COD4512074.cif",
+        "engine_mode": "float64-full",
         "n_atoms": 440,
-        "n_bonds": 576,
-        "unique_elements": [
-          "C",
-          "H",
-          "O",
-          "Zr"
-        ],
+        "n_bonds_total": 576,
+        "n_intra_cell_bonds_emitted": 441,
+        "min_bond_ang": 0.827,
+        "median_bond_ang": 1.467,
         "box_ang": [
-          20.747,
-          20.747,
-          20.747
+          20.75,
+          20.75,
+          20.75
         ],
-        "temperature_sweep": [
-          {
-            "target_temp_K": 100.0,
-            "measured_temp_K": 92.64,
-            "potential_energy_kj_mol": 1312.97,
-            "kinetic_energy_kj_mol": 508.36,
-            "max_force_kj_mol_nm": 1259.71,
-            "ms_per_step": 1.3981,
-            "ns_per_day_2fs": 123.6,
-            "health_status": "bounded",
-            "all_atoms_in_periodic_box": true,
-            "mmcif_valid": true
-          },
-          {
-            "target_temp_K": 300.0,
-            "measured_temp_K": 190.34,
-            "potential_energy_kj_mol": 1888.6,
-            "kinetic_energy_kj_mol": 1044.48,
-            "max_force_kj_mol_nm": 1692.74,
-            "ms_per_step": 1.1283,
-            "ns_per_day_2fs": 153.14,
-            "health_status": "bounded",
-            "all_atoms_in_periodic_box": true,
-            "mmcif_valid": true
-          },
-          {
-            "target_temp_K": 500.0,
-            "measured_temp_K": 287.11,
-            "potential_energy_kj_mol": 2472.31,
-            "kinetic_energy_kj_mol": 1575.5,
-            "max_force_kj_mol_nm": 1971.46,
-            "ms_per_step": 1.0449,
-            "ns_per_day_2fs": 165.38,
-            "health_status": "bounded",
-            "all_atoms_in_periodic_box": true,
-            "mmcif_valid": true
-          }
-        ]
+        "all_atoms_in_box": true,
+        "potential_energy_kj_mol": 1544.84,
+        "kinetic_energy_kj_mol": 1377.44,
+        "temperature_K": 251.01,
+        "max_force_kj_mol_nm": 1329.47,
+        "ms_per_step": 1.3581,
+        "ns_per_day_2fs": 127.2,
+        "engine_ram_mb": 0.1222,
+        "health_status": "bounded"
+      },
+      {
+        "structure": "UiO-66 Zr-MOF (Zr6O4(OH)4(BDC)6, COD 4512074)",
+        "filename": "UiO-66_COD4512074.cif",
+        "engine_mode": "tryte-all-atom",
+        "n_atoms": 440,
+        "n_bonds_total": 576,
+        "n_intra_cell_bonds_emitted": 399,
+        "min_bond_ang": 0.558,
+        "median_bond_ang": 1.455,
+        "box_ang": [
+          20.75,
+          20.75,
+          20.75
+        ],
+        "all_atoms_in_box": true,
+        "potential_energy_kj_mol": 428.03,
+        "kinetic_energy_kj_mol": 922.42,
+        "temperature_K": 168.09,
+        "max_force_kj_mol_nm": 474.56,
+        "ms_per_step": 0.9686,
+        "ns_per_day_2fs": 178.4,
+        "engine_ram_mb": 0.0264,
+        "health_status": "bounded"
       },
       {
         "structure": "Au102(p-MBA)44 Gold Nanoparticle + 44 Thiolate Ligands",
         "filename": "Au102_pMBA44_3GJ7.cif",
+        "engine_mode": "float64-full",
         "n_atoms": 762,
-        "n_bonds": 948,
-        "unique_elements": [
-          "Au",
-          "C",
-          "H",
-          "O",
-          "S"
-        ],
+        "n_bonds_total": 948,
+        "n_intra_cell_bonds_emitted": 948,
+        "min_bond_ang": 0.812,
+        "median_bond_ang": 1.67,
         "box_ang": [
-          54.014,
+          54.01,
           53.5,
-          53.618
+          53.62
         ],
-        "temperature_sweep": [
-          {
-            "target_temp_K": 100.0,
-            "measured_temp_K": 86.52,
-            "potential_energy_kj_mol": 1546.42,
-            "kinetic_energy_kj_mol": 822.22,
-            "max_force_kj_mol_nm": 819.65,
-            "ms_per_step": 1.6927,
-            "ns_per_day_2fs": 102.09,
-            "health_status": "bounded",
-            "all_atoms_in_periodic_box": true,
-            "mmcif_valid": true
-          },
-          {
-            "target_temp_K": 300.0,
-            "measured_temp_K": 209.62,
-            "potential_energy_kj_mol": 2420.79,
-            "kinetic_energy_kj_mol": 1992.13,
-            "max_force_kj_mol_nm": 1116.69,
-            "ms_per_step": 1.4335,
-            "ns_per_day_2fs": 120.54,
-            "health_status": "bounded",
-            "all_atoms_in_periodic_box": true,
-            "mmcif_valid": true
-          },
-          {
-            "target_temp_K": 500.0,
-            "measured_temp_K": 331.52,
-            "potential_energy_kj_mol": 3304.98,
-            "kinetic_energy_kj_mol": 3150.59,
-            "max_force_kj_mol_nm": 1439.57,
-            "ms_per_step": 1.3502,
-            "ns_per_day_2fs": 127.98,
-            "health_status": "bounded",
-            "all_atoms_in_periodic_box": true,
-            "mmcif_valid": true
-          }
-        ]
-      }
-    ],
-    "morse_De_sweep": [
-      {
-        "De_kj_mol": 250.0,
-        "nve_rel_energy_drift": 6.798e-05
+        "all_atoms_in_box": true,
+        "potential_energy_kj_mol": 2261.54,
+        "kinetic_energy_kj_mol": 2130.47,
+        "temperature_K": 224.18,
+        "max_force_kj_mol_nm": 1140.95,
+        "ms_per_step": 1.656,
+        "ns_per_day_2fs": 104.4,
+        "engine_ram_mb": 0.2116,
+        "health_status": "bounded"
       },
       {
-        "De_kj_mol": 420.0,
-        "nve_rel_energy_drift": 0.0001158
+        "structure": "Au102(p-MBA)44 Gold Nanoparticle + 44 Thiolate Ligands",
+        "filename": "Au102_pMBA44_3GJ7.cif",
+        "engine_mode": "tryte-all-atom",
+        "n_atoms": 762,
+        "n_bonds_total": 948,
+        "n_intra_cell_bonds_emitted": 948,
+        "min_bond_ang": 0.491,
+        "median_bond_ang": 1.533,
+        "box_ang": [
+          54.01,
+          53.5,
+          53.62
+        ],
+        "all_atoms_in_box": true,
+        "potential_energy_kj_mol": 900.0,
+        "kinetic_energy_kj_mol": 1856.82,
+        "temperature_K": 195.38,
+        "max_force_kj_mol_nm": 408.39,
+        "ms_per_step": 1.3164,
+        "ns_per_day_2fs": 131.3,
+        "engine_ram_mb": 0.0453,
+        "health_status": "bounded"
       },
       {
-        "De_kj_mol": 600.0,
-        "nve_rel_energy_drift": 0.0001625
+        "structure": "Bi2Se3 Topological Insulator (R-3m Supercell, mp-541837)",
+        "filename": "Bi2Se3_R3m_mp541837.cif",
+        "engine_mode": "float64-full",
+        "n_atoms": 240,
+        "n_bonds_total": 576,
+        "n_intra_cell_bonds_emitted": 411,
+        "min_bond_ang": 2.584,
+        "median_bond_ang": 2.918,
+        "box_ang": [
+          16.55,
+          14.33,
+          28.64
+        ],
+        "all_atoms_in_box": true,
+        "potential_energy_kj_mol": -449.05,
+        "kinetic_energy_kj_mol": 623.85,
+        "temperature_K": 208.42,
+        "max_force_kj_mol_nm": 1041.14,
+        "ms_per_step": 1.0391,
+        "ns_per_day_2fs": 166.3,
+        "engine_ram_mb": 0.0667,
+        "health_status": "bounded"
+      },
+      {
+        "structure": "Bi2Se3 Topological Insulator (R-3m Supercell, mp-541837)",
+        "filename": "Bi2Se3_R3m_mp541837.cif",
+        "engine_mode": "tryte-all-atom",
+        "n_atoms": 240,
+        "n_bonds_total": 576,
+        "n_intra_cell_bonds_emitted": 410,
+        "min_bond_ang": 2.588,
+        "median_bond_ang": 2.942,
+        "box_ang": [
+          16.55,
+          14.33,
+          28.64
+        ],
+        "all_atoms_in_box": true,
+        "potential_energy_kj_mol": -1360.55,
+        "kinetic_energy_kj_mol": 911.01,
+        "temperature_K": 304.36,
+        "max_force_kj_mol_nm": 142.28,
+        "ms_per_step": 0.4332,
+        "ns_per_day_2fs": 398.9,
+        "engine_ram_mb": 0.0164,
+        "health_status": "bounded"
       }
     ],
-    "elapsed_s": 0.479,
+    "elapsed_s": 0.524,
     "passed": true
   },
   {
-    "suite": "Suite 4: Condensed-Matter Physics (Bi2Se3 mp-541837, CNT Tersoff, Yukawa Plasma)",
-    "domain": "Condensed-Matter & Plasma Physics",
-    "bi2se3_topological_insulator": {
-      "n_atoms": 240,
-      "n_bonds": 576,
-      "dt_sweep": [
-        {
-          "dt_fs": 0.5,
-          "potential_energy_kj_mol": -657.28,
-          "max_force_kj_mol_nm": 751.86,
-          "mean_Bi_Se_bond_ang": 2.9603,
-          "experimental_Bi_Se_bond_range_ang": [
-            2.86,
-            3.05
-          ],
-          "ms_per_step": 0.7834,
-          "health_status": "bounded"
-        },
-        {
-          "dt_fs": 1.0,
-          "potential_energy_kj_mol": -585.78,
-          "max_force_kj_mol_nm": 885.21,
-          "mean_Bi_Se_bond_ang": 2.9556,
-          "experimental_Bi_Se_bond_range_ang": [
-            2.86,
-            3.05
-          ],
-          "ms_per_step": 0.6867,
-          "health_status": "bounded"
-        },
-        {
-          "dt_fs": 2.0,
-          "potential_energy_kj_mol": -381.87,
-          "max_force_kj_mol_nm": 1090.75,
-          "mean_Bi_Se_bond_ang": 2.9392,
-          "experimental_Bi_Se_bond_range_ang": [
-            2.86,
-            3.05
-          ],
-          "ms_per_step": 0.7069,
-          "health_status": "bounded"
-        }
-      ]
+    "suite": "Suite 5: Physics Accuracy (NVE Scaling, TIP3P Water NPT, Code Lab Live Steering)",
+    "domain": "Thermodynamic & Integrator Accuracy",
+    "nve_dt_sweep": [
+      {
+        "dt_fs": 0.5,
+        "rel_energy_std": 5.808e-07
+      },
+      {
+        "dt_fs": 1.0,
+        "rel_energy_std": 1.899e-06
+      },
+      {
+        "dt_fs": 2.0,
+        "rel_energy_std": 5.426e-06
+      }
+    ],
+    "tip3p_water_300K_1bar": {
+      "biology_mm_density_g_cm3": 0.9842,
+      "openmm_8_tip3p_ref_g_cm3": 0.986,
+      "experimental_water_ref_g_cm3": 0.997,
+      "g_oo_first_peak_ang": 2.75,
+      "gromacs_tip3p_ref_peak_ang": 2.78
     },
-    "cnt_tersoff_strain_sweep": [
-      {
-        "strain_rate_ps_inv": 0.0,
-        "potential_energy": -228717.683,
-        "stress_zz": -545.4648,
-        "box_lz_nm": 1.9676,
-        "health_status": "bounded"
-      },
-      {
-        "strain_rate_ps_inv": 0.002,
-        "potential_energy": -228717.65,
-        "stress_zz": -547.1154,
-        "box_lz_nm": 1.9677,
-        "health_status": "bounded"
-      },
-      {
-        "strain_rate_ps_inv": 0.005,
-        "potential_energy": -228717.597,
-        "stress_zz": -549.5913,
-        "box_lz_nm": 1.9678,
-        "health_status": "bounded"
-      }
-    ],
-    "yukawa_kappa_sweep": [
-      {
-        "debye_kappa_nm_inv": 1.0,
-        "mean_total_energy_kj_mol": -1243.178,
-        "nve_rel_energy_drift": 0.0001523
-      },
-      {
-        "debye_kappa_nm_inv": 2.5,
-        "mean_total_energy_kj_mol": -585.971,
-        "nve_rel_energy_drift": 2.712e-05
-      },
-      {
-        "debye_kappa_nm_inv": 5.0,
-        "mean_total_energy_kj_mol": -62.368,
-        "nve_rel_energy_drift": 7.283e-05
-      }
-    ],
-    "elapsed_s": 0.329,
-    "passed": true
-  },
-  {
-    "suite": "Suite 5: Electrostatics (DSF Alpha Sweep & 3^k TernaryMSM 27-pt Stencil)",
-    "domain": "Long-Range Electrostatics",
-    "dsf_alpha_sweep": [
-      {
-        "alpha_dsf_nm_inv": 0.15,
-        "potential_energy_kj_mol": 21.362,
-        "max_force_kj_mol_nm": 803.987,
-        "ternary_msm_27cubed_ms": 0.505,
-        "volume_packet_bytes": 78832,
-        "health_status": "bounded"
-      },
-      {
-        "alpha_dsf_nm_inv": 0.25,
-        "potential_energy_kj_mol": 21.319,
-        "max_force_kj_mol_nm": 803.994,
-        "ternary_msm_27cubed_ms": 0.426,
-        "volume_packet_bytes": 78832,
-        "health_status": "bounded"
-      },
-      {
-        "alpha_dsf_nm_inv": 0.35,
-        "potential_energy_kj_mol": 21.224,
-        "max_force_kj_mol_nm": 804.007,
-        "ternary_msm_27cubed_ms": 0.441,
-        "volume_packet_bytes": 78832,
-        "health_status": "bounded"
-      }
-    ],
-    "elapsed_s": 0.031,
-    "passed": true
-  },
-  {
-    "suite": "Suite 6: Hardware Resource & 40M-Atom Scaling Benchmark vs OpenMM / GROMACS / LAMMPS / NAMD",
-    "domain": "Computer Systems & Memory Scaling",
-    "hardware_profile": {
-      "os": "Darwin 27.2.0",
-      "machine": "arm64",
-      "gpu_backend": "metal",
-      "device_name": "Apple M5",
-      "has_gpu": true
-    },
-    "scaling_table": [
-      {
-        "n_atoms": 440,
-        "storage_mode": "float64-full",
-        "biology_mm_ram_mb": 0.1222,
-        "naive_float64_ram_mb": 0.0704,
-        "memory_savings_ratio": 0.58,
-        "ms_per_step": 1.5218,
-        "ns_per_day_2fs": 113.6,
-        "openmm_est_ram_mb": 140.08,
-        "gromacs_est_ram_mb": 65.07,
-        "lammps_est_ram_mb": 80.07
-      },
-      {
-        "n_atoms": 100000,
-        "storage_mode": "tryte-all-atom",
-        "biology_mm_ram_mb": 4.4632,
-        "naive_float64_ram_mb": 15.2588,
-        "memory_savings_ratio": 3.42,
-        "ms_per_step": 8.134,
-        "ns_per_day_2fs": 21.24,
-        "openmm_est_ram_mb": 158.0,
-        "gromacs_est_ram_mb": 80.0,
-        "lammps_est_ram_mb": 96.8
-      },
-      {
-        "n_atoms": 1000000,
-        "storage_mode": "tryte-all-atom",
-        "biology_mm_ram_mb": 42.3638,
-        "naive_float64_ram_mb": 152.5879,
-        "memory_savings_ratio": 3.6,
-        "ms_per_step": 82.476,
-        "ns_per_day_2fs": 2.1,
-        "openmm_est_ram_mb": 320.0,
-        "gromacs_est_ram_mb": 215.0,
-        "lammps_est_ram_mb": 248.0
-      },
-      {
-        "n_atoms": 10000000,
-        "storage_mode": "tryte-all-atom",
-        "biology_mm_ram_mb": 421.3353,
-        "naive_float64_ram_mb": 1525.8789,
-        "memory_savings_ratio": 3.62,
-        "ms_per_step": 830.692,
-        "ns_per_day_2fs": 0.21,
-        "openmm_est_ram_mb": 1940.0,
-        "gromacs_est_ram_mb": 1565.0,
-        "lammps_est_ram_mb": 1760.0
-      },
-      {
-        "n_atoms": 40000000,
-        "storage_mode": "symmetry-compact",
-        "biology_mm_ram_mb": 1.8186,
-        "naive_float64_ram_mb": 6400.0,
-        "memory_savings_ratio": 3519.14,
-        "ms_per_step": 2.294,
-        "ns_per_day_2fs": 75.34,
-        "openmm_est_ram_mb": "7,340.0 MB (OOM on 8GB GPU)",
-        "gromacs_est_ram_mb": "6,065.0 MB",
-        "lammps_est_ram_mb": "6,800.0 MB"
-      }
-    ],
-    "elapsed_s": 8.245,
-    "passed": true
-  },
-  {
-    "suite": "Suite 7: Code Lab & Live Parameter Steering Integration",
-    "domain": "Interactive Studio & SDK Integration",
-    "open_science_engine_in_codelab": {
+    "codelab_live_steering": {
       "ok": true,
-      "step_count": 15,
-      "n_atoms": 10
+      "final_steps": 25,
+      "updated_rcut_nm": 0.92
     },
-    "in_place_session_mutation": {
-      "ok": true,
-      "step_count": 25,
-      "updated_rcut_nm": 0.92,
-      "updated_temperature_K": 467.59
-    },
-    "openff_sage_parameterization_in_codelab": {
-      "ok": true,
-      "n_atoms": 10,
-      "n_bonds": 9
-    },
-    "elapsed_s": 0.014,
+    "elapsed_s": 1.42,
     "passed": true
   }
 ]

@@ -542,7 +542,78 @@ def softcore_relax_clashes(
     inv_L = 1.0 / np.maximum(box_L, 1e-9)
     pos = (pos * inv_L[None, :] - np.floor(pos * inv_L[None, :])) * box_L[None, :]
 
-    e_init, f_init, initial_clashes = _eval_softcore_lj(pos, box_L, sigma_arr, eps_arr, rcut, alpha_sc, lam, exclusions=exclusions)
+    # Build 1-2 bond spring pairs and 1-2/1-3 exclusion list so covalent bonds are never blown apart
+    bond_i = np.zeros(0, dtype=np.int32)
+    bond_j = np.zeros(0, dtype=np.int32)
+    bond_r0 = np.zeros(0, dtype=np.float64)
+    full_exclusions: List[Tuple[int, int]] = list(exclusions) if exclusions else []
+
+    if not full_exclusions and n <= 8000:
+        # Auto-detect initial covalent/coordination contacts (0.04 nm < r <= 0.245 nm)
+        ii0, jj0, _, r0_init = _find_neighbor_pairs_mic(pos, box_L, min(0.245, rcut))
+        cov_mask = (r0_init > 0.04) & (r0_init <= 0.245)
+        if np.any(cov_mask):
+            bond_i = ii0[cov_mask].astype(np.int32)
+            bond_j = jj0[cov_mask].astype(np.int32)
+            bond_r0 = r0_init[cov_mask].astype(np.float64)
+            full_exclusions = list(zip(bond_i.tolist(), bond_j.tolist()))
+    elif full_exclusions:
+        ex_arr = np.asarray(full_exclusions, dtype=np.int32).reshape((-1, 2))
+        d_ex = pos[ex_arr[:, 0]] - pos[ex_arr[:, 1]]
+        d_ex -= box_L[None, :] * np.rint(d_ex * inv_L[None, :])
+        r_ex = np.sqrt(np.maximum(np.sum(d_ex * d_ex, axis=1), 0.0))
+        cov_mask = (r_ex > 0.04) & (r_ex <= 0.33)
+        if np.any(cov_mask):
+            bond_i = ex_arr[cov_mask, 0].astype(np.int32)
+            bond_j = ex_arr[cov_mask, 1].astype(np.int32)
+            bond_r0 = r_ex[cov_mask].astype(np.float64)
+
+    # Expand exclusions to include 1-3 angle pairs and 1-4 ring pairs of detected covalent bonds
+    if bond_i.size > 0 and n <= 25000:
+        from collections import defaultdict
+        adj_b: Dict[int, List[int]] = defaultdict(list)
+        excl_set = set((min(int(u), int(v)), max(int(u), int(v))) for u, v in full_exclusions if int(u) != int(v))
+        for u, v in zip(bond_i.tolist(), bond_j.tolist()):
+            adj_b[int(u)].append(int(v))
+            adj_b[int(v)].append(int(u))
+            excl_set.add((min(int(u), int(v)), max(int(u), int(v))))
+        for center, nbrs in adj_b.items():
+            ln = len(nbrs)
+            for a1 in range(ln):
+                u1 = nbrs[a1]
+                for a2 in range(a1 + 1, ln):
+                    u2 = nbrs[a2]
+                    if u1 != u2:
+                        excl_set.add((min(u1, u2), max(u1, u2)))
+                # 1-4 pairs across aromatic rings / small clusters
+                if n <= 4000:
+                    for w in adj_b.get(u1, ()):
+                        if w != center:
+                            for a2 in range(ln):
+                                u2 = nbrs[a2]
+                                if u2 != u1 and u2 != w:
+                                    excl_set.add((min(u2, w), max(u2, w)))
+        full_exclusions = sorted(list(excl_set))
+
+    def _eval_with_bonds(q_pos: np.ndarray) -> Tuple[float, np.ndarray, int]:
+        e_lj, f_lj, n_cl = _eval_softcore_lj(
+            q_pos, box_L, sigma_arr, eps_arr, rcut, alpha_sc, lam, exclusions=full_exclusions or None
+        )
+        if bond_i.size > 0:
+            db = q_pos[bond_i] - q_pos[bond_j]
+            db -= box_L[None, :] * np.rint(db * inv_L[None, :])
+            rb = np.sqrt(np.maximum(np.sum(db * db, axis=1), 1e-18))
+            dr_b = rb - bond_r0
+            k_b = 12000.0
+            e_lj += 0.5 * k_b * float(np.sum(dr_b * dr_b))
+            fb = db * (-(k_b * dr_b) / rb)[:, None]
+            for dim in range(3):
+                f_lj[:, dim] += np.bincount(bond_i, weights=fb[:, dim], minlength=n) - np.bincount(
+                    bond_j, weights=fb[:, dim], minlength=n
+                )
+        return e_lj, f_lj, n_cl
+
+    e_init, f_init, initial_clashes = _eval_with_bonds(pos)
     fmax_init = float(np.max(np.linalg.norm(f_init, axis=1)))
 
     if initial_clashes == 0 and fmax_init < 100.0:
@@ -581,7 +652,7 @@ def softcore_relax_clashes(
         disp = f_capped * (step_size / fc_max)
         cand = pos + disp
         cand = (cand * inv_L[None, :] - np.floor(cand * inv_L[None, :])) * box_L[None, :]
-        e_new, f_new, clashes_new = _eval_softcore_lj(cand, box_L, sigma_arr, eps_arr, rcut, alpha_sc, lam, exclusions=exclusions)
+        e_new, f_new, clashes_new = _eval_with_bonds(cand)
         steps_run = step
 
         if np.isfinite(e_new) and e_new <= e_curr:
