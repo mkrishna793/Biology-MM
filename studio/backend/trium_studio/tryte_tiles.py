@@ -654,7 +654,7 @@ class TryteTileFullAtomSession:
         gamma: float = 5.0,
         rcut: float = 0.75,
         tile_size: int = 27,
-        max_active_aa_atoms: int = 16_384,
+        max_active_aa_atoms: Optional[int] = None,
         max_stream_atoms: int = 65_536,
         focus_center_ang: Optional[Sequence[float]] = None,
         aa_radius_ang: float = 45.0,
@@ -672,6 +672,12 @@ class TryteTileFullAtomSession:
         n = int(pos_in.shape[0])
         self.n_atoms: int = n
         self.tile_size: int = max(1, int(tile_size))
+        if max_active_aa_atoms is None:
+            try:
+                from biology_mm import probe_hardware
+                max_active_aa_atoms = 65_536 if probe_hardware().has_gpu else 16_384
+            except Exception:
+                max_active_aa_atoms = 16_384
         self.max_active_aa_atoms: int = max(27, int(max_active_aa_atoms))
         self.max_stream_atoms: int = max(27, int(max_stream_atoms))
         self.coord_to_ang: float = 10.0
@@ -875,6 +881,9 @@ class TryteTileFullAtomSession:
         self._nb_j: np.ndarray = np.zeros(0, dtype=np.int32)
         self._nb_ref_pos: Optional[np.ndarray] = None
         self._nb_rcut_cached: float = -1.0
+        self._aa_gpu_plan: Any = None
+        self._aa_gpu_box: Optional[np.ndarray] = None
+        self._aa_gpu_origin: Optional[np.ndarray] = None
 
         # Streaming delta tracker (strictly sized to <= max_stream_atoms!)
         self.delta_streaming_enabled: bool = True
@@ -1004,6 +1013,12 @@ class TryteTileFullAtomSession:
 
     def close(self) -> None:
         with self._lock:
+            if getattr(self, "_aa_gpu_plan", None) is not None:
+                try:
+                    self._aa_gpu_plan.close()
+                except Exception:
+                    pass
+                self._aa_gpu_plan = None
             self._history.clear()
             self._history_ram_bytes = 0
 
@@ -1142,6 +1157,71 @@ class TryteTileFullAtomSession:
 
         self._build_active_enm()
         self._nb_ref_pos = None
+        self._init_aa_gpu_plan()
+
+    def _init_aa_gpu_plan(self) -> None:
+        """Build an Apple Metal GPUVerletPlan for the active AA focus zone when >= 512 atoms."""
+        if getattr(self, "_aa_gpu_plan", None) is not None:
+            try:
+                self._aa_gpu_plan.close()
+            except Exception:
+                pass
+            self._aa_gpu_plan = None
+        self._aa_gpu_box = None
+        self._aa_gpu_origin = None
+
+        aa_idx = self._active_atom_indices
+        n_aa = int(aa_idx.size)
+        if n_aa < 512 or self.mode != "metal_verlet":
+            return
+
+        try:
+            from .engine_core import _build_spatial_gpu_verlet_plan
+
+            pos_aa = self.positions_nm[aa_idx].astype(np.float64)
+            z_aa = self.atomic_numbers[aa_idx]
+            sig_aa = ELEMENT_LUT_SIGMA[z_aa].astype(np.float64)
+            eps_aa = ELEMENT_LUT_EPSILON[z_aa].astype(np.float64)
+            chg_aa = self.charges[aa_idx].astype(np.float64)
+
+            if n_aa == self.n_atoms and self._is_periodic_box:
+                origin = np.zeros(3, dtype=np.float64)
+                box_aa = self.box_H.astype(np.float64)
+            else:
+                min_p = np.min(pos_aa, axis=0) - 1.5
+                max_p = np.max(pos_aa, axis=0) + 1.5
+                origin = min_p
+                span = np.maximum(max_p - min_p, 4.0)
+                box_aa = np.diag(span.astype(np.float64))
+
+            pos_local = np.mod(pos_aa - origin[None, :], np.diag(box_aa)[None, :])
+            min_L = float(np.min(np.diag(box_aa)))
+            rc_safe = min(float(self.rcut), 0.45 * min_L)
+            skin = min(0.18, max(0.05, 0.48 * min_L - rc_safe))
+
+            exclusions = list(zip(self._enm_i.tolist(), self._enm_j.tolist())) if self._enm_i.size > 0 else None
+            plan = _build_spatial_gpu_verlet_plan(
+                positions=pos_local,
+                sigma=sig_aa,
+                epsilon=eps_aa,
+                charges=chg_aa,
+                box=box_aa,
+                exclusions=exclusions,
+                rcut=rc_safe,
+                skin=max(0.02, skin),
+                alpha_dsf=0.25 if self._has_nonzero_charges else 0.0,
+                use_lfs=True,
+                include_self=True,
+                backend="auto",
+            )
+            if plan.using_gpu:
+                self._aa_gpu_plan = plan
+                self._aa_gpu_box = box_aa
+                self._aa_gpu_origin = origin
+            else:
+                plan.close()
+        except Exception:
+            self._aa_gpu_plan = None
 
     def _tiles_to_atom_indices(self, tile_ids: np.ndarray) -> np.ndarray:
         """Convert sorted tile IDs into flat sorted atom indices in `[0, n_atoms)`."""
@@ -1319,43 +1399,50 @@ class TryteTileFullAtomSession:
                     )
                 self.virial += d_b.T @ f_enm
 
-            # A2: Smooth Soft-Core + C1 LFS Nonbonded LJ
-            rc = float(self.rcut)
-            ii, jj, d_ij, r = self._get_active_nonbonded_pairs(pos_aa, rc)
-            if ii.size > 0:
-                z_aa = self.atomic_numbers[aa_idx]
-                sig_aa = ELEMENT_LUT_SIGMA[z_aa].astype(np.float64)
-                eps_aa = ELEMENT_LUT_EPSILON[z_aa].astype(np.float64)
-                sig_ij = 0.5 * (sig_aa[ii] + sig_aa[jj])
-                eps_ij = np.sqrt(np.maximum(eps_aa[ii] * eps_aa[jj], 0.0))
-                sig2 = sig_ij * sig_ij
-                a_sc = 0.05 * sig2
+            # A2: Apple Metal GPUVerletPlan offload (when available) or C1 LFS CPU pairlist
+            if self._aa_gpu_plan is not None and self._aa_gpu_box is not None and self._aa_gpu_origin is not None:
+                pos_local = np.mod(pos_aa - self._aa_gpu_origin[None, :], np.diag(self._aa_gpu_box)[None, :])
+                u_nb, f_nb, vir_nb = self._aa_gpu_plan.eval(positions=pos_local, box=self._aa_gpu_box, compute_virial=True)
+                u_tot += float(u_nb)
+                f_aa += f_nb
+                self.virial += vir_nb
+            else:
+                rc = float(self.rcut)
+                ii, jj, d_ij, r = self._get_active_nonbonded_pairs(pos_aa, rc)
+                if ii.size > 0:
+                    z_aa = self.atomic_numbers[aa_idx]
+                    sig_aa = ELEMENT_LUT_SIGMA[z_aa].astype(np.float64)
+                    eps_aa = ELEMENT_LUT_EPSILON[z_aa].astype(np.float64)
+                    sig_ij = 0.5 * (sig_aa[ii] + sig_aa[jj])
+                    eps_ij = np.sqrt(np.maximum(eps_aa[ii] * eps_aa[jj], 0.0))
+                    sig2 = sig_ij * sig_ij
+                    a_sc = 0.05 * sig2
 
-                r2 = r * r
-                denom = r2 + a_sc
-                s2 = sig2 / denom
-                s6 = s2 * s2 * s2
-                s12 = s6 * s6
-                u_r = 4.0 * eps_ij * (s12 - s6)
-                du_over_r = (24.0 * eps_ij / denom) * (s6 - 2.0 * s12)
+                    r2 = r * r
+                    denom = r2 + a_sc
+                    s2 = sig2 / denom
+                    s6 = s2 * s2 * s2
+                    s12 = s6 * s6
+                    u_r = 4.0 * eps_ij * (s12 - s6)
+                    du_over_r = (24.0 * eps_ij / denom) * (s6 - 2.0 * s12)
 
-                denom_rc = (rc * rc) + a_sc
-                s2_rc = sig2 / denom_rc
-                s6_rc = s2_rc * s2_rc * s2_rc
-                s12_rc = s6_rc * s6_rc
-                u_rc = 4.0 * eps_ij * (s12_rc - s6_rc)
-                du_rc = (24.0 * eps_ij * rc / denom_rc) * (s6_rc - 2.0 * s12_rc)
+                    denom_rc = (rc * rc) + a_sc
+                    s2_rc = sig2 / denom_rc
+                    s6_rc = s2_rc * s2_rc * s2_rc
+                    s12_rc = s6_rc * s6_rc
+                    u_rc = 4.0 * eps_ij * (s12_rc - s6_rc)
+                    du_rc = (24.0 * eps_ij * rc / denom_rc) * (s6_rc - 2.0 * s12_rc)
 
-                u_pair = u_r - u_rc - (r - rc) * du_rc
-                r_safe = np.maximum(r, 1e-12)
-                force_over_r = -(du_over_r - (du_rc / r_safe))
-                f_ij = d_ij * force_over_r[:, None]
-                for dim in range(3):
-                    f_aa[:, dim] += np.bincount(ii, weights=f_ij[:, dim], minlength=n_aa) - np.bincount(
-                        jj, weights=f_ij[:, dim], minlength=n_aa
-                    )
-                u_tot += float(np.sum(u_pair))
-                self.virial += d_ij.T @ f_ij
+                    u_pair = u_r - u_rc - (r - rc) * du_rc
+                    r_safe = np.maximum(r, 1e-12)
+                    force_over_r = -(du_over_r - (du_rc / r_safe))
+                    f_ij = d_ij * force_over_r[:, None]
+                    for dim in range(3):
+                        f_aa[:, dim] += np.bincount(ii, weights=f_ij[:, dim], minlength=n_aa) - np.bincount(
+                            jj, weights=f_ij[:, dim], minlength=n_aa
+                        )
+                    u_tot += float(np.sum(u_pair))
+                    self.virial += d_ij.T @ f_ij
 
             self.forces[aa_idx] += f_aa.astype(np.float32)
 
@@ -1693,6 +1780,7 @@ class TryteTileFullAtomSession:
             self._build_tile_network()
             self._build_active_enm()
             self._nb_ref_pos = None
+            self._init_aa_gpu_plan()
             self._evaluate_state()
             self._q_thermo_cum = 0.0
             self._initial_total_energy = float(self.potential_energy + self.kinetic_energy)
