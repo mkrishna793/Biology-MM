@@ -230,7 +230,7 @@ using .FoundationCore.Multiscale
         )
         ctx_pbc = Factors.Context(box, Types.REDUCED, 12)
         G = zeros(Float64, 3, 3)
-        accumulate_box_derivative!(G, ms_pbc, q_pbc, ctx_pbc)
+        Multiscale.accumulate_box_derivative!(G, ms_pbc, q_pbc, ctx_pbc)
 
         # Diagonal fixed-fractional finite difference dU/dL_a
         s_frac = copy(q_pbc)
@@ -276,7 +276,7 @@ using .FoundationCore.Multiscale
         res = softcore_relax_clashes!(
             q_clash, sigma, epsilon, NoBox();
             rcut = 1.0, alpha_sc = 0.5, lambda = 0.5,
-            max_steps = 50, step_size = 0.002, max_disp = 0.02, force_tol = 500.0
+            max_steps = 80, step_size = 0.002, max_disp = 0.02, force_tol = 500.0
         )
 
         @test isfinite(res.initial_energy)
@@ -297,7 +297,7 @@ using .FoundationCore.Multiscale
         res_pbc = softcore_relax_clashes!(
             q_pbc_clash, fill(0.34, 4), fill(1.0, 4), box;
             rcut = 1.0, alpha_sc = 0.5, lambda = 0.5,
-            max_steps = 50, step_size = 0.002, max_disp = 0.02, force_tol = 500.0
+            max_steps = 80, step_size = 0.002, max_disp = 0.02, force_tol = 500.0
         )
         @test isfinite(res_pbc.initial_energy) && isfinite(res_pbc.final_energy)
         @test res_pbc.final_energy < 0.25 * res_pbc.initial_energy

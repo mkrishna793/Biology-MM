@@ -10,7 +10,7 @@ using FoundationCore.Chemistry
 using Printf
 
 const C = FoundationCore.Chemistry
-const REPO_ROOT = normpath(joinpath(@__DIR__, "..", "..", ".."))
+const REPO_ROOT = normpath(joinpath(@__DIR__, "..", ".."))
 
 # ---------------------------------------------------------------------------
 # fixtures

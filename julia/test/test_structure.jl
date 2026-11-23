@@ -18,7 +18,7 @@ using Printf
 const T = FoundationCore.Types
 const PR = FoundationCore.Prepare
 
-const REPO_ROOT = normpath(joinpath(@__DIR__, "..", "..", ".."))
+const REPO_ROOT = normpath(joinpath(@__DIR__, "..", ".."))
 const BPTI = joinpath(REPO_ROOT, "wrappers", "python", "tests", "systems", "bpti.pdb")
 
 function test_real_protein_parses()

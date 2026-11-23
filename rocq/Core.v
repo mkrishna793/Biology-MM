@@ -1,4 +1,4 @@
-From Stdlib Require Import QArith Lia.
+From Coq Require Import QArith Lia.
 
 Record Vec3 := {
   vx : Q;

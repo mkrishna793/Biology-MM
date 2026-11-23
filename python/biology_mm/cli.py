@@ -7,6 +7,7 @@ import json
 import sys
 from typing import Optional, Sequence
 
+from . import __version__
 from .native import get_bridge, mm_abi_version, mm_version, probe_hardware
 from .simulation import discover_julia_toolchain
 
@@ -16,7 +17,7 @@ def build_info_payload() -> dict:
     prof = probe_hardware()
     tc = discover_julia_toolchain()
     return {
-        "sdk_version": "1.0.0",
+        "sdk_version": __version__,
         "cpu_bridge_loaded": bridge.has_cpu_bridge,
         "cpu_bridge_path": str(bridge.mm_lib_path) if bridge.mm_lib_path else None,
         "mm_version": mm_version() if bridge.has_cpu_bridge else None,

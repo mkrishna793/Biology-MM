@@ -36,7 +36,7 @@ const POP = FoundationCore.PolarizationOperator
 # The real protein fixture already used by test_structure.jl (OpenMM corpus,
 # BPTI, 892 atoms). Resolved relative to this file so the suite is location
 # independent.
-const BPTI_PATH = normpath(joinpath(@__DIR__, "..", "..", "..",
+const BPTI_PATH = normpath(joinpath(@__DIR__, "..", "..",
                                     "wrappers", "python", "tests", "systems", "bpti.pdb"))
 
 # ---------------------------------------------------------------------------

@@ -1486,7 +1486,8 @@ XBT_GPU_EXPORT void* xbt_gpu_verlet_plan_create(
     std::vector<uint32_t> row_counts(n_atoms, 0);
     bool any_scaled = false;
 
-    if (n_tile_pairs > 0 && tile_i && tile_j && tile_starts && tile_ends) {
+    if (n_tile_pairs > 0 && tile_i && tile_j && tile_starts && tile_ends &&
+        use_lfs == 0 && n_scaled == 0 && n_atoms > 4096) {
         plan->use_tile_stream = true;
         plan->n_tile_pairs = n_tile_pairs;
         plan->nnz = n_tile_pairs * 32 * 32;
