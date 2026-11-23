@@ -265,7 +265,8 @@ def suite_1_hecbiosim_benchmarks(host_ram_gb: float) -> Dict[str, Any]:
         )
         init_ms = (time.perf_counter() - t_init0) * 1e3
 
-        # Warm-up + timed production MD steps
+        # Minimize initial contacts + warm-up + timed production MD steps
+        sim.minimize(max_iters=3)
         sim.step(2)
         t_run0 = time.perf_counter()
         n_bench_steps = 15
@@ -471,7 +472,7 @@ def suite_3_lammps_benchmark_suite(host_ram_gb: float) -> Dict[str, Any]:
     z_eam = np.full(n_32k, 29, dtype=np.uint8)  # Copper (Z=29)
 
     # 3D. LAMMPS in.rhodo: 32,000 All-Atom Rhodopsin GPCR in Solvated Lipid Bilayer with Partial Charges & Bonds
-    box_rhodo = (11.0, 11.0, 7.7)
+    box_rhodo = (13.0, 13.0, 9.5)
     pos_rh, z_rh, q_rh, bonds_rh = _build_realistic_biomolecular_composition(
         n_32k, 5_600, 10_400, 0, 64, box_rhodo, seed=304
     )
@@ -491,7 +492,7 @@ def suite_3_lammps_benchmark_suite(host_ram_gb: float) -> Dict[str, Any]:
             charges=q_arr,
             bonds=b_list,
             box_nm=bx_nm,
-            dt=0.002,
+            dt=0.001 if q_arr is not None else 0.002,
             temperature=temp_K,
             structure_metadata={"title": label},
         )

@@ -1,7 +1,7 @@
 # Biology-MM — Open-Science Atomic Simulation & Interactive 3D Workbench
 
 [![Release](https://img.shields.io/badge/release-v2.5.0-blue.svg)](https://github.com/mkrishna793/Biology-MM/releases/tag/v2.5.0)
-[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+[![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](LICENSE)
 [![Formal Proofs](https://img.shields.io/badge/Lean%204%20%2B%20Rocq-0%20sorryAx-purple.svg)](lean/)
 [![Benchmarks](https://img.shields.io/badge/Benchmarks-HECBioSim%20%7C%20MPI%20GROMACS%20%7C%20LAMMPS-orange.svg)](validation/COMPETITIVE_BENCHMARK_REPORT.md)
 
@@ -16,7 +16,7 @@
 ### Prerequisites
 - **Python 3.10+** (`numpy`, `scipy`, `fastapi`, `uvicorn`, `websockets`, `pydantic`)
 - **macOS Apple Silicon (Metal GPU)** or **Linux / x86_64 (CPU / NEON)**
-- *(Optional)* **Node.js + `pnpm`** only if you want to modify/rebuild the frontend TypeScript source (pre-built production assets are already included).
+- **Node.js 20+ & `pnpm`** if building the browser 3D UI locally (`studio/**/dist/` is gitignored; the Python SDK and REST/WebSocket backend run without Node).
 
 ### 1. Clone & Start the Live Web UI
 ```bash
@@ -27,6 +27,10 @@ cd Biology-MM
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r studio/backend/requirements.txt
+pip install -e python
+
+# Build the 3D frontend bundle once (optional if running Python SDK / API only)
+(cd studio/frontend/biology-mm-studio && pnpm install && pnpm run build)
 
 # Launch Biology-MM Studio (serves API + WebGL2 3D UI at http://127.0.0.1:8765)
 cd studio
@@ -36,7 +40,7 @@ cd studio
 Then open **`http://127.0.0.1:8765`** in your browser:
 1. **Load any structure:** Upload `.cif`, `.mmcif`, `.pdb`, `.gro`, `.xyz`, `.data` (LAMMPS), or `.prmtop`/`.inpcrd` (AMBER) — or fetch any PDB/EMDB entry directly in **Download Structure** (e.g., `1CRN`, `1TQN`, `3J3Y`, `5J7V`) and click **Simulate Active Mol\* Structure**.
 2. **Scale interactively (`Scale` tab):** Adjust the **3-Zone Multiscale Focus Sphere** (`AA Rad` / `CG Rad`) to focus up to **65,536 All-Atom (`AA`)** atoms on the **Apple Metal GPU** while simulating millions of surrounding atoms in **`Tryte 27+5`** tiles.
-3. **Run & Steer (`Run` tab):** Press **Play**, steer **Temperature (K)** or **E-Field**, switch live coloring (`Force Magnitude`, `Kinetic Temp`, `Charge Potential`, `Multiscale Zone`), click any atom to inspect or tug it with **Steered MD (`Pull +5 Å`)**, and export `.dcd`, `.xtc`, `.pdb`, or `.mvsx`.
+3. **Run & Steer (`Run` tab):** Press **Play**, steer **Temperature (K)** or **E-Field**, switch live coloring (`Force Magnitude`, `Kinetic Temp`, `Charge Potential`, `Multiscale Zone`), click any atom to inspect or tug it with **Steered MD (`Pull +5 Å`)**, export `.mvsx` scenes from the UI, or export standard `.dcd`, `.xtc`, and `.pdb` trajectories via the REST API (`/api/sessions/{sid}/export/{dcd,xtc,pdb}`) and Python SDK.
 
 ---
 
@@ -50,7 +54,7 @@ Biology-MM solves this with four architectural innovations:
    - Simulates **12,000,000 atoms (`MPI GROMACS benchPEP`)** in **`505.55 MB`** (`2.06%` of 24 GB laptop RAM — **`28.9×` smaller** than GROMACS/OpenMM's `~14.6 GB`).
    - Simulates **2,116,800 atoms (`3J3Y` HIV-1 Capsid)** interactively on a laptop in **`89 MB`** with **`65,529` Metal GPU All-Atom (`AA`)** + **`2.05M` `CG`** coupled tiles and **`1.37e-7` Shadow-$H$ drift**.
 2. **Symmetry-Compact Multiscale Engine (`0.05 B/atom`):** For viral capsids and crystalline assemblies (`40,000,000` atoms), stores only the asymmetric unit + $4\times 4$ transforms (`1.82 MB` total RAM — **`3,519×` memory reduction** vs. `7,340 MB` float64).
-3. **Apple Metal GPU-Resident Batched Verlet (`3,484 ns/day` @ 2 fs | `6,969 ns/day` @ 4 fs HMR):** Executes 1,000+ symplectic Velocity-Verlet steps inside a single Metal command buffer with zero Python/CPU overhead (`0.0496 ms/step`).
+3. **Apple Metal GPU-Resident Batched Verlet (`3,484 ns/day` @ 2 fs | `6,969 ns/day` @ 4 fs HMR on a 216-atom unbonded LJ fluid micro-benchmark):** Executes 1,000+ symplectic Velocity-Verlet steps inside a single Metal command buffer with zero Python/CPU overhead (`0.0496 ms/step`).
 4. **Formally Verified Mechanics (`0 sorryAx`):** Exact centroid/residual-moment factorization (`Harmonic.lean`) and Velocity-Verlet Shadow Hamiltonian invariants (`Shadow.lean`) are machine-checked in **Lean 4** and **Rocq**, with **HMC Metropolis Shadow-$H$ guards** preventing energy blowups during interactive steering.
 
 ---
@@ -73,6 +77,8 @@ PYTHONPATH="python:studio/backend" python3 validation/run_competitive_benchmarks
 | **MPI GROMACS `benchRIB`** (70S Ribosome + rRNA + $\text{Mg}^{2+}$) | `2,000,004` | **`84.52 MB`** | `2,850.0 MB` | **`33.7×`** | `44.3 B` | `1,042.5 MB` | `0.344%` | `248.5 ms` | **`8.05 M/s`** | `0.70 ns/day` | `9.44e-5` | **bounded** |
 | **MPI GROMACS `benchPEP`** (12M-Atom Supercomputer Box) | `12,000,000` | **`505.55 MB`** | `14,600.0 MB` | **`28.9×`** | `44.2 B` | `2,764.4 MB` | **`2.057%`** | `1,196.8 ms` | **`10.03 M/s`** | `0.14 ns/day` | `1.12e-6` | **bounded** |
 
+> **Benchmark Scope & Limitations:** In `benchRIB` (2M atoms) and `benchPEP` (12M atoms), Biology-MM runs its **Tryte 27+5 multiscale** representation (an active All-Atom focus zone coupled to tile-level far-field multipoles/elastic terms, without full-system PME electrostatics or full AMBER/CHARMM dihedral evaluation across all 12M atoms). The `GROMACS / OpenMM Ref RAM` column reflects full-system PME all-atom MD; RAM reduction and step timings above therefore measure multiscale interactive laptop execution rather than an identical full-system PME workload.
+
 ### 2. Official LAMMPS Benchmark Suite (`docs.lammps.org/Speed_bench.html`) & Metal GPU Peak
 | Workload | Atoms ($N$) | Bonds | Charged | Biology-MM RAM | LAMMPS Ref RAM | Step Time (`ms/step`) | `Timesteps/s` | `MATOM-steps/s` | Throughput (`ns/day` @ 2 fs) | Shadow-$H$ Drift | Status |
 | :--- | ---: | ---: | :--- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | :--- |
@@ -81,7 +87,7 @@ PYTHONPATH="python:studio/backend" python3 validation/run_competitive_benchmarks
 | **LAMMPS `in.eam`** (FCC Copper Crystal) | `32,000` | `0` | `False` | **`1.53 MB`** | `118.5 MB` | `79.36 ms` | `12.6/s` | `0.40 M/s` | `2.18 ns/day` | `9.18e-6` | **bounded** |
 | **LAMMPS `in.rhodo`** (Rhodopsin GPCR in Lipid) | `32,000` | `12,000` | `True` | **`1.63 MB`** | `118.5 MB` | `52.75 ms` | `19.0/s` | `0.61 M/s` | `3.28 ns/day` | `1.46e-4` | **bounded** |
 | **LAMMPS `in.ters`** (Tersoff CNT Tensile) | `320` | `480` | `False` | **`0.09 MB`** | `42.0 MB` | `3.17 ms` | `315.5/s` | `0.10 M/s` | `54.5 ns/day` | `4.23e-4` | **bounded** |
-| **Apple Metal GPU Batched Verlet** (1,000-step batch) | `216` | `0` | `False` | **`0.08 MB`** | `48.0 MB` | **`0.0496 ms`** | **`20,163.8/s`** | **`4.36 M/s`** | **`3,484.3 ns/day`** *(6,969 @ 4fs HMR)* | — | **bounded** |
+| **Apple Metal GPU Batched Verlet** (216-atom LJ micro-bench) | `216` | `0` | `False` | **`0.08 MB`** | `48.0 MB` | **`0.0496 ms`** | **`20,163.8/s`** | **`4.36 M/s`** | **`3,484.3 ns/day`** *(6,969 @ 4fs HMR)* | `0.1019` | **bounded** |
 
 ### 3. Real Chemistry & Condensed-Matter Crystals (`Float64-Full Metal` & `Tryte 27+5`)
 | Structure | Engine Mode | Atoms | Intra-Cell Bonds | Periodic Box (Å) | In-Box | Max $\|F\|$ | Step Time (`ms/step`) | `ns/day` (@ 2 fs) | Status |
@@ -188,3 +194,13 @@ PYTHONPATH="python:studio/backend" pytest studio/backend/tests/test_open_science
 # Full Multi-Domain Competitive & Accuracy Benchmarks
 PYTHONPATH="python:studio/backend" python3 validation/run_competitive_benchmarks.py
 ```
+
+---
+
+## License & Open-Science Terms
+
+Biology-MM is licensed under the **[GNU Affero General Public License v3.0 (AGPL-3.0)](LICENSE)**.
+
+- **For individuals, students, researchers, and scientists:** You are free to download, run, study, modify, and extend Biology-MM end-to-end for your research and personal work at no cost.
+- **Strong Copyleft Open-Source Protection:** Any distributed modifications or network-hosted services built on Biology-MM must also be released as open source under **AGPL-3.0**, ensuring the platform and community improvements remain open rather than being enclosed into proprietary closed-source commercial software.
+- **Commercial / Proprietary Use:** Organizations that wish to integrate Biology-MM into closed-source commercial products or hosted services without AGPL-3.0 source-disclosure obligations should contact the author for a separate commercial license.

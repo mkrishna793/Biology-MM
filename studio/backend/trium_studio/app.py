@@ -53,11 +53,10 @@ from .sandbox import execute_user_code
 from .structure_loader import _infer_bonds_pbc, load_structure_from_bytes, load_structure_pair_from_bytes
 from .ws_manager import PALETTE_NAMES, ManagedSession, SessionManager
 
-STUDIO_VERSION = "2.0.0"
+STUDIO_VERSION = "2.5.0"
 _DIST_CANDIDATES = [
     Path(__file__).resolve().parents[2] / "molstar" / "apps" / "biology-mm-studio" / "dist",
-    Path(__file__).resolve().parents[1] / "frontend" / "biology-mm-studio" / "dist",
-    Path("/Users/mohana/Desktop/Biology-MM-Studio/molstar/apps/biology-mm-studio/dist"),
+    Path(__file__).resolve().parents[2] / "frontend" / "biology-mm-studio" / "dist",
 ]
 DEFAULT_DIST_DIR = next((p for p in _DIST_CANDIDATES if (p / "index.html").is_file()), _DIST_CANDIDATES[0])
 
