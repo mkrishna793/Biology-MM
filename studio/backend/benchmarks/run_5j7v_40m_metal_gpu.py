@@ -3,11 +3,13 @@ import ctypes
 import os
 import sys
 import time
+from pathlib import Path
 import numpy as np
 
-# Ensure Python can import from studio-backend and biology-mm
-sys.path.insert(0, '/Users/mohana/Desktop/Biology-MM-Studio/studio-backend')
-sys.path.insert(0, '/Users/mohana/Desktop/Biology-MM/python')
+# Ensure Python can import from studio/backend and python SDK cleanly from any checkout
+REPO_ROOT = Path(__file__).resolve().parents[3]
+sys.path.insert(0, str(REPO_ROOT / "studio" / "backend"))
+sys.path.insert(0, str(REPO_ROOT / "python"))
 
 from biology_mm import GPUVerletPlan, probe_hardware
 from biology_mm.native import get_bridge, _as_box_matrices
@@ -20,9 +22,13 @@ def main():
     hw = probe_hardware()
     print(f"Hardware: {hw.device_name} | Backend: {hw.backend} | VRAM: {hw.vram_bytes / (1024**3):.2f} GB")
 
-    bin_path = '/Users/mohana/Desktop/5j7v_40m_coords.bin'
+    bin_path = (
+        sys.argv[1]
+        if len(sys.argv) > 1
+        else os.environ.get("BIOLOGY_MM_5J7V_COORDS", str(Path.home() / "Desktop" / "5j7v_40m_coords.bin"))
+    )
     if not os.path.exists(bin_path):
-        print(f"Error: {bin_path} not found.")
+        print(f"Error: {bin_path} not found. Set BIOLOGY_MM_5J7V_COORDS or pass path as argv[1].")
         return
 
     t0 = time.time()

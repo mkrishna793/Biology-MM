@@ -2,6 +2,8 @@
 import sys, os, time
 from pathlib import Path
 
+import psutil
+
 REPO_ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(REPO_ROOT / 'python'))
 sys.path.insert(0, str(REPO_ROOT / 'studio' / 'backend'))
@@ -77,7 +79,11 @@ for N in [1_000_000, 5_000_000, 10_000_000]:
     del pos, sigma, epsilon, charge, plan, forces, masses, momenta
 
 # 2. Faustovirus 5J7V 40M Capsid Benchmark
-coords_path = "/Users/mohana/Desktop/5j7v_40m_coords.bin"
+coords_path = (
+    sys.argv[1]
+    if len(sys.argv) > 1
+    else os.environ.get("BIOLOGY_MM_5J7V_COORDS", str(Path.home() / "Desktop" / "5j7v_40m_coords.bin"))
+)
 if os.path.exists(coords_path):
     print("\n=== Loading Faustovirus 5J7V 40-Million Atom Capsid ===", flush=True)
     ram_before = get_ram_mb()

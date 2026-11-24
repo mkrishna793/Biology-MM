@@ -1391,7 +1391,7 @@ class TryteTileFullAtomSession:
                 r_b = np.sqrt(np.maximum(np.sum(d_b * d_b, axis=1), 1e-24))
                 dr = r_b - self._enm_r0.astype(np.float64)
                 r0_enm = self._enm_r0.astype(np.float64)
-                k_b = np.where(r0_enm < 0.23, 4500.0, float(self._enm_k_bond))
+                k_b = np.where(r0_enm < 0.23, 12000.0, float(self._enm_k_bond))
                 u_tot += 0.5 * float(np.sum(k_b * dr * dr))
                 f_enm = d_b * (-(k_b * dr) / r_b)[:, None]
                 for dim in range(3):
