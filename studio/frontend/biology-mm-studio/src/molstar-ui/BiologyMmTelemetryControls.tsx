@@ -57,6 +57,11 @@ function formatDriftFraction(drift: number | undefined): string {
   return `${(drift * 100).toFixed(3)}%`;
 }
 
+function fmtNum(val: number | null | undefined, digits: number, suffix = ''): string {
+  if (typeof val !== 'number' || !Number.isFinite(val)) return '—';
+  return `${val.toFixed(digits)}${suffix}`;
+}
+
 function formatBytes(bytes: number): string {
   if (!Number.isFinite(bytes) || bytes <= 0) return '0 B';
   if (bytes < 1024) return `${bytes} B`;
@@ -201,27 +206,27 @@ export class BiologyMmTelemetryControls extends CollapsableControls<CollapsableP
         <div className="bmm-msp-metrics-grid">
           <div className="bmm-msp-metric-cell">
             <span>Total E</span>
-            <strong>{m ? m.total_energy.toFixed(1) : '—'}</strong>
+            <strong>{fmtNum(m?.total_energy, 1)}</strong>
           </div>
           <div className="bmm-msp-metric-cell">
             <span>Temp (K)</span>
-            <strong>{m ? m.temperature_K.toFixed(1) : '—'}</strong>
+            <strong>{fmtNum(m?.temperature_K, 1)}</strong>
           </div>
           <div className="bmm-msp-metric-cell">
             <span>Potential E</span>
-            <strong>{m ? m.potential_energy.toFixed(1) : '—'}</strong>
+            <strong>{fmtNum(m?.potential_energy, 1)}</strong>
           </div>
           <div className="bmm-msp-metric-cell">
             <span>Kinetic E</span>
-            <strong>{m ? m.kinetic_energy.toFixed(1) : '—'}</strong>
+            <strong>{fmtNum(m?.kinetic_energy, 1)}</strong>
           </div>
           <div className="bmm-msp-metric-cell">
             <span>Max |F|</span>
-            <strong>{m ? m.max_force.toFixed(2) : '—'}</strong>
+            <strong>{fmtNum(m?.max_force, 2)}</strong>
           </div>
           <div className="bmm-msp-metric-cell">
             <span>Speed</span>
-            <strong>{m ? `${m.ms_per_step.toFixed(1)} ms` : '—'}</strong>
+            <strong>{fmtNum(m?.ms_per_step, 1, ' ms')}</strong>
           </div>
         </div>
 
@@ -351,29 +356,29 @@ export class BiologyMmTelemetryControls extends CollapsableControls<CollapsableP
                 </div>
                 <div>
                   <span>|F|</span>
-                  <strong>{atom.force_magnitude.toFixed(3)}</strong>
+                  <strong>{fmtNum(atom.force_magnitude, 3)}</strong>
                 </div>
                 <div>
                   <span>Local T</span>
-                  <strong>{atom.local_temp_K.toFixed(1)} K</strong>
+                  <strong>{fmtNum(atom.local_temp_K, 1, ' K')}</strong>
                 </div>
                 <div>
                   <span>Charge</span>
-                  <strong>{atom.charge.toFixed(3)}</strong>
+                  <strong>{fmtNum(atom.charge, 3)}</strong>
                 </div>
                 <div>
                   <span>Bond Ord</span>
-                  <strong>{atom.bond_order.toFixed(2)}</strong>
+                  <strong>{fmtNum(atom.bond_order, 2)}</strong>
                 </div>
                 <div>
                   <span>Ternary</span>
-                  <strong>{atom.ternary_state.toFixed(1)}</strong>
+                  <strong>{fmtNum(atom.ternary_state, 1)}</strong>
                 </div>
                 <div className="bmm-msp-atom-wide">
                   <span>Pos (Å)</span>
                   <strong>
-                    {atom.position_ang[0].toFixed(2)}, {atom.position_ang[1].toFixed(2)},{' '}
-                    {atom.position_ang[2].toFixed(2)}
+                    {fmtNum(atom.position_ang?.[0], 2)}, {fmtNum(atom.position_ang?.[1], 2)},{' '}
+                    {fmtNum(atom.position_ang?.[2], 2)}
                   </strong>
                 </div>
               </div>

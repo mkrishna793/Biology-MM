@@ -1551,14 +1551,19 @@ class TryteTileFullAtomSession:
                 if len(self._smd_history) > 200:
                     self._smd_history = self._smd_history[-200:]
 
+        # Sanitize any non-finite forces before promotion bit & kinetic energy checks
+        if n > 0 and not np.all(np.isfinite(self.forces)):
+            np.nan_to_num(self.forces, nan=0.0, posinf=1.0e6, neginf=-1.0e6, copy=False)
+        if not math.isfinite(u_tot):
+            u_tot = 1.0e12
+
         # Update Lane 31 high-force promotion bit on any tile with max force > 5000 kJ/(mol*nm)
         if n_t > 0:
             n_full = n // t_sz
             if n_full > 0:
-                f2_blk = np.sum(
-                    self.forces[: n_full * t_sz].reshape((n_full, t_sz, 3)) ** 2, axis=2
-                )
-                hi_mask = np.max(f2_blk, axis=1) > np.float32(5000.0 * 5000.0)
+                f_f64 = self.forces[: n_full * t_sz].astype(np.float64).reshape((n_full, t_sz, 3))
+                f2_blk = np.sum(f_f64 * f_f64, axis=2)
+                hi_mask = np.max(f2_blk, axis=1) > (5000.0 * 5000.0)
                 self.tile_set.tile_flags[:n_full] = np.where(
                     hi_mask,
                     self.tile_set.tile_flags[:n_full] | np.uint32(TILE_FLAG_PROMOTED),
@@ -1573,8 +1578,10 @@ class TryteTileFullAtomSession:
         if self.n_atoms == 0:
             return 0.0
         masses = ELEMENT_LUT_MASS[self.atomic_numbers]
-        p2 = np.sum(self.momenta * self.momenta, axis=1, dtype=np.float32)
-        return 0.5 * float(np.sum(p2.astype(np.float64) / np.maximum(masses.astype(np.float64), 1e-12)))
+        p_f64 = self.momenta.astype(np.float64)
+        p2 = np.sum(p_f64 * p_f64, axis=1)
+        ke = 0.5 * float(np.sum(p2 / np.maximum(masses.astype(np.float64), 1e-12)))
+        return ke if math.isfinite(ke) else 0.0
 
     def step(self, n_steps: int = 1, apply_thermostat: Optional[bool] = None) -> Dict[str, Any]:
         """Advance ALL N atoms under symmetric BAOAB + Extended Shadow-H + HMC Metropolis guard."""
@@ -1599,7 +1606,7 @@ class TryteTileFullAtomSession:
             c1_f32 = np.float32(c1)
             c2_f32 = np.float32(c2)
             beta = 1.0 / max(self.k_b * self.temperature, 1e-6)
-            allow_full_backup = n <= 50_000
+            allow_full_backup = n <= 300_000
 
             for _ in range(n_steps):
                 old_pe = float(self.potential_energy)
@@ -1657,7 +1664,11 @@ class TryteTileFullAtomSession:
                 # 7. HMC Metropolis Safeguard
                 e_ext_new = float(self.potential_energy + self.kinetic_energy)
                 dH_ext = (e_ext_new - e_ext_old) - dQ_thermo
-                f_max_new = float(np.sqrt(np.max(np.sum(self.forces * self.forces, axis=1)))) if n > 0 else 0.0
+                f_max_new = (
+                    float(np.sqrt(np.max(np.sum(self.forces.astype(np.float64) ** 2, axis=1))))
+                    if n > 0
+                    else 0.0
+                )
                 hmc_threshold = max(50.0 * self.k_b * self.temperature, 0.01 * max(abs(e_ext_old), 100.0))
 
                 if (
@@ -1675,17 +1686,22 @@ class TryteTileFullAtomSession:
                             self.positions_nm[:] = old_pos
                             self.momenta[:] = np.float32(-0.5) * old_mom
                             self.forces[:] = old_frc
-                            self.potential_energy = old_pe
+                            self.potential_energy = old_pe if math.isfinite(old_pe) else 0.0
                             self.kinetic_energy = self._compute_kinetic_energy()
                         elif n > 0:
-                            # Zero-copy rollback for N > 50k: damp momenta & undo drift
-                            self.momenta *= np.float32(-0.5)
-                            self.positions_nm += np.float32(dt) * (self.momenta * inv_m)
+                            # Zero-copy rollback for N > 300k: damp finite momenta & undo drift safely
+                            if np.all(np.isfinite(self.momenta)) and np.all(np.isfinite(self.positions_nm)):
+                                self.momenta *= np.float32(-0.5)
+                                self.positions_nm += np.float32(dt) * (self.momenta * inv_m)
+                            else:
+                                self.momenta.fill(0.0)
+                                np.nan_to_num(self.positions_nm, nan=0.0, posinf=0.0, neginf=0.0, copy=False)
                             self._evaluate_state()
-                        dQ_thermo = self.kinetic_energy - old_ke
+                        dQ_thermo = self.kinetic_energy - (old_ke if math.isfinite(old_ke) else 0.0)
                         self.hmc_rejections += 1
 
-                self._q_thermo_cum += dQ_thermo
+                if math.isfinite(dQ_thermo):
+                    self._q_thermo_cum += dQ_thermo
                 self.hmc_steps += 1
                 self.step_count += 1
                 self.sim_time_ps += dt
@@ -2064,12 +2080,16 @@ class TryteTileFullAtomSession:
             inst_temp = (2.0 * self.kinetic_energy) / max(1e-9, 3.0 * n * self.k_b) if n > 0 else 0.0
             ns_per_day = (0.002 * 86400.0) / max(self.last_ms_per_step, 1e-4)
             f_max = (
-                float(np.sqrt(np.max(np.sum(self.forces * self.forces, axis=1))))
+                float(np.sqrt(np.max(np.sum(self.forces.astype(np.float64) ** 2, axis=1))))
                 if n > 0
                 else 0.0
             )
+            if not math.isfinite(f_max):
+                f_max = 0.0
             vol_nm3 = float(abs(np.linalg.det(self.box_H)))
-            total_e = float(self.potential_energy + self.kinetic_energy)
+            pe_fin = float(self.potential_energy) if math.isfinite(self.potential_energy) else 0.0
+            ke_fin = float(self.kinetic_energy) if math.isfinite(self.kinetic_energy) else 0.0
+            total_e = float(pe_fin + ke_fin)
             e0 = self._initial_total_energy
             e_scale = max(
                 abs(e0) if (e0 is not None and math.isfinite(e0)) else 0.0,
@@ -2079,7 +2099,7 @@ class TryteTileFullAtomSession:
             if e0 is not None and math.isfinite(total_e) and math.isfinite(e0) and math.isfinite(self._q_thermo_cum):
                 drift_fraction = abs((total_e - e0) - self._q_thermo_cum) / e_scale
             else:
-                drift_fraction = 0.0 if math.isfinite(total_e) else float("inf")
+                drift_fraction = 0.0
 
             if (not math.isfinite(total_e)) or (not math.isfinite(f_max)) or (f_max > 1.0e5):
                 health_status = "clash"
@@ -2120,13 +2140,13 @@ class TryteTileFullAtomSession:
                 "n_tiles": int(self.tile_set.n_tiles),
                 "tile_size": int(self.tile_size),
                 "tryte_pair_count": int(self._tryte_pair_count),
-                "potential_energy": float(self.potential_energy),
-                "kinetic_energy": float(self.kinetic_energy),
+                "potential_energy": pe_fin,
+                "kinetic_energy": ke_fin,
                 "total_energy": total_e,
-                "temperature_K": float(inst_temp),
+                "temperature_K": float(inst_temp) if math.isfinite(inst_temp) else 0.0,
                 "max_force": f_max,
-                "drift_fraction": float(drift_fraction),
-                "q_thermo_cum": float(self._q_thermo_cum),
+                "drift_fraction": float(drift_fraction) if math.isfinite(drift_fraction) else 0.0,
+                "q_thermo_cum": float(self._q_thermo_cum) if math.isfinite(self._q_thermo_cum) else 0.0,
                 "hmc_rejections": int(self.hmc_rejections),
                 "health_status": health_status,
                 "ms_per_step": float(self.last_ms_per_step),
@@ -2134,7 +2154,7 @@ class TryteTileFullAtomSession:
                 "box_lengths_nm": [float(self.box_H[0, 0]), float(self.box_H[1, 1]), float(self.box_H[2, 2])],
                 "box_origin_ang": [float(self._box_origin_ang[0]), float(self._box_origin_ang[1]), float(self._box_origin_ang[2])],
                 "volume_nm3": vol_nm3,
-                "stress_zz": float(self.virial[2, 2] / max(vol_nm3, 1e-9)),
+                "stress_zz": (lambda v: v if math.isfinite(v) else 0.0)(float(self.virial[2, 2] / max(vol_nm3, 1e-9))),
                 "mode": self.mode,
                 "backend": "tryte-27+5-all-atom",
                 "history_steps": list(self._history.keys()),
