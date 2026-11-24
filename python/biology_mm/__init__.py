@@ -1,5 +1,20 @@
 """Biology MM Python SDK: Native Trium-XBT / Apple Metal MM acceleration and Open-Science simulation."""
 
+from .alphafold_pipeline import (
+    ATLASFlexibilityReport,
+    AlphaFoldEntry,
+    AlphaFoldStructureConfidence,
+    ConfidenceGuidedSetup,
+    PAEDomainPartition,
+    cluster_pae_domains,
+    compute_confidence_guided_setup,
+    compute_per_residue_rmsf,
+    compute_plddt_restraint_weights,
+    evaluate_atlas_flexibility,
+    fetch_alphafold_entry,
+    parse_alphafold_plddt_any,
+    parse_pae_json,
+)
 from .builders import AtomicSystem, NanostructureBuilder, SystemBuilder
 from .enhanced_sampling import (
     AngleCV,
@@ -70,10 +85,23 @@ from .trajectory_io import (
     write_xtc,
 )
 
-__version__ = "2.5.0"
+__version__ = "2.6.0"
 
 __all__ = [
+    "ATLASFlexibilityReport",
     "AlphaFoldConfidence",
+    "AlphaFoldEntry",
+    "AlphaFoldStructureConfidence",
+    "ConfidenceGuidedSetup",
+    "PAEDomainPartition",
+    "cluster_pae_domains",
+    "compute_confidence_guided_setup",
+    "compute_per_residue_rmsf",
+    "compute_plddt_restraint_weights",
+    "evaluate_atlas_flexibility",
+    "fetch_alphafold_entry",
+    "parse_alphafold_plddt_any",
+    "parse_pae_json",
     "AngleCV",
     "AtomicSystem",
     "BiasPotential",

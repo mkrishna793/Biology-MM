@@ -1,0 +1,14 @@
+{
+  "passed": true,
+  "elapsed_s": 2.084,
+  "n_domains_detected": 2,
+  "n_hinge_residues": 12,
+  "mean_loop_rmsf_ang": 0.7627,
+  "mean_core_rmsf_ang": 0.4441,
+  "loop_to_core_rmsf_ratio": 1.717,
+  "pearson_r": 0.6081,
+  "spearman_rho": 0.4202,
+  "final_health": "bounded",
+  "final_temp_K": 322.0,
+  "final_drift": 0.000400244837300269
+}

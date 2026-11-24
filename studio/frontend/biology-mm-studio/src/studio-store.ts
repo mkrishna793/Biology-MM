@@ -684,10 +684,87 @@ export class BiologyMmStudioStore {
       });
 
       await this.activateSessionScene(sid, title, nAtoms, channel, palette, 'default', res.metrics?.storage_mode);
+      this.resetCamera();
       return true;
     } catch (err) {
       this.setState({
         error: err instanceof Error ? err.message : 'Failed to upload structure file to engine',
+      });
+      return false;
+    } finally {
+      this.setState({ isBusy: false });
+    }
+  }
+
+
+  async fetchAlphaFoldStructure(
+    uniprotId: string,
+    options?: {
+      mode?: SimulationMode;
+      temperature?: number;
+      dt?: number;
+      applyPlddtRestraints?: boolean;
+    },
+  ): Promise<boolean> {
+    const uid = uniprotId.trim().toUpperCase();
+    if (!uid) {
+      this.setState({ error: 'Enter a valid UniProt ID (e.g. P00533, P69905, Q9Y6K9)' });
+      return false;
+    }
+    this.setState({
+      isBusy: true,
+      error: null,
+      isPlaying: false,
+      pickedAtom: null,
+      isReversed: false,
+    });
+    try {
+      const mode = options?.mode ?? 'metal_verlet';
+      const temp = options?.temperature ?? 300.0;
+      const dt = options?.dt ?? 0.002;
+      const query = new URLSearchParams({
+        mode,
+        temperature: String(temp),
+        dt: String(dt),
+        storage_mode: this.state.storageMode,
+        apply_plddt_restraints: String(options?.applyPlddtRestraints ?? true),
+      });
+      const res = await fetchJson<{
+        session_id: string;
+        title?: string;
+        num_atoms: number;
+        metrics?: SimulationMetrics;
+      }>(`/api/sessions/alphafold/${encodeURIComponent(uid)}?${query.toString()}`, {
+        method: 'POST',
+      });
+      const sid = res.session_id;
+      const title = res.title ?? `AF-${uid}`;
+      const nAtoms = res.num_atoms ?? 0;
+      const channel = this.state.activeChannel;
+      const palette = this.state.activePalette;
+      this.setState({
+        sessionId: sid,
+        sessionTitle: title,
+        activePresetId: null,
+        colorMode: 'default',
+        metrics: res.metrics ?? null,
+        metricHistory: res.metrics ? [res.metrics] : [],
+        multiscale: res.metrics?.multiscale ?? null,
+        relaxationReport: null,
+        steerAtomState: { ...INITIAL_STEER_ATOM_STATE },
+        frameStats: {
+          ...this.state.frameStats,
+          nAtoms,
+          simTimePs: res.metrics?.time_ps ?? 0,
+          wsConnected: false,
+        },
+      });
+      await this.activateSessionScene(sid, title, nAtoms, channel, palette, 'default', res.metrics?.storage_mode);
+      this.resetCamera();
+      return true;
+    } catch (err) {
+      this.setState({
+        error: err instanceof Error ? err.message : `Failed to fetch AlphaFold entry ${uid}`,
       });
       return false;
     } finally {
@@ -1119,6 +1196,33 @@ export class BiologyMmStudioStore {
       URL.revokeObjectURL(objUrl);
     } catch (err) {
       this.setState({ error: err instanceof Error ? err.message : 'Failed to export .mvsx' });
+    } finally {
+      this.setState({ isBusy: false });
+    }
+  }
+
+
+  async exportTrajectory(format: 'dcd' | 'xtc' | 'pdb'): Promise<void> {
+    const sid = this.state.sessionId;
+    if (!sid) return;
+    this.setState({ isBusy: true, error: null });
+    try {
+      const url = `/api/sessions/${encodeURIComponent(sid)}/export/${format}`;
+      const res = await fetch(url);
+      if (!res.ok) {
+        throw new Error(`Export .${format} failed (${res.status})`);
+      }
+      const blob = await res.blob();
+      const objUrl = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = objUrl;
+      a.download = `biology-mm-${sid}.${format}`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(objUrl);
+    } catch (err) {
+      this.setState({ error: err instanceof Error ? err.message : `Failed to export .${format}` });
     } finally {
       this.setState({ isBusy: false });
     }

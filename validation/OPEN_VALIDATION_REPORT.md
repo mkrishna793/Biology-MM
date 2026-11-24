@@ -34,7 +34,7 @@
     "std_total_energy_kj_mol": 0.0005,
     "relative_energy_fluctuation": 3.1e-06,
     "mean_temperature_K": 104.91,
-    "elapsed_s": 0.064,
+    "elapsed_s": 0.229,
     "passed": true
   },
   {
@@ -47,7 +47,7 @@
     "g_oo_first_peak_ang": 2.75,
     "g_oo_first_peak_height": 1.869,
     "mean_temperature_K": 387.41,
-    "elapsed_s": 1.255,
+    "elapsed_s": 4.202,
     "passed": true
   },
   {
@@ -58,7 +58,7 @@
     "metad_hills_deposited": 20,
     "phi_sampled_span_deg": 56.63,
     "reconstructed_fes_range_kj_mol": 17.063,
-    "elapsed_s": 0.069,
+    "elapsed_s": 0.253,
     "passed": true
   },
   {
@@ -66,7 +66,7 @@
     "domain": "Chemistry & Physics",
     "morse_relative_energy_drift": 0.0001723,
     "yukawa_relative_energy_drift": 8.562e-05,
-    "elapsed_s": 0.013,
+    "elapsed_s": 0.051,
     "passed": true
   },
   {
@@ -79,7 +79,7 @@
     "compression_ratio_dcd_vs_xtc": 2.2,
     "max_dcd_vs_xtc_coord_diff_nm": 0.000499,
     "max_box_diff_nm": 3.004e-08,
-    "elapsed_s": 0.006,
+    "elapsed_s": 0.02,
     "passed": true
   }
 ]

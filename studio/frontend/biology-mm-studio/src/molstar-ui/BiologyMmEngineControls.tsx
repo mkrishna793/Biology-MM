@@ -17,6 +17,7 @@ interface EngineControlsState extends CollapsableState {
   selectedPresetId: string;
   importMode: SimulationMode;
   tempInput: string;
+  alphafoldId: string;
   efieldInput: string;
   focusCenterX: string;
   focusCenterY: string;
@@ -99,6 +100,7 @@ export class BiologyMmEngineControls extends CollapsableControls<CollapsableProp
       selectedPresetId: 'biomolecular-complex',
       importMode: 'metal_verlet',
       tempInput: '300',
+      alphafoldId: '',
       efieldInput: '0',
       focusCenterX: '0.0',
       focusCenterY: '0.0',
@@ -277,6 +279,39 @@ export class BiologyMmEngineControls extends CollapsableControls<CollapsableProp
                 </option>
               ))}
             </select>
+          }
+        />
+
+        <ControlRow
+          label="AlphaFold"
+          control={
+            <div style={{ display: 'flex', gap: '4px' }}>
+              <input
+                type="text"
+                className="msp-form-control"
+                placeholder="UniProt ID (e.g. P69905)"
+                value={this.state.alphafoldId}
+                onChange={(e: ChangeEvent<HTMLInputElement>) =>
+                  this.setState({ alphafoldId: e.target.value })
+                }
+                disabled={snap.isBusy}
+                style={{ flex: 1, minWidth: 0 }}
+              />
+              <Button
+                inline
+                onClick={() =>
+                  void store.fetchAlphaFoldStructure(this.state.alphafoldId, {
+                    mode: this.state.importMode,
+                    temperature: Math.max(0.1, Number(this.state.tempInput) || 300),
+                    applyPlddtRestraints: true,
+                  })
+                }
+                disabled={snap.isBusy || !this.state.alphafoldId.trim()}
+                title="Fetch AlphaFold DB structure + PAE JSON by UniProt ID and start confidence-guided MD"
+              >
+                Fetch
+              </Button>
+            </div>
           }
         />
 
@@ -717,6 +752,38 @@ export class BiologyMmEngineControls extends CollapsableControls<CollapsableProp
                 title="Reset 3D camera view"
               >
                 Reset
+              </Button>
+            </div>
+          }
+        />
+
+        <ControlRow
+          label="Trajectory"
+          control={
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '4px' }}>
+              <Button
+                inline
+                onClick={() => void store.exportTrajectory('dcd')}
+                disabled={!snap.sessionId || snap.isBusy}
+                title="Export standard binary CHARMM/NAMD .dcd trajectory"
+              >
+                .DCD
+              </Button>
+              <Button
+                inline
+                onClick={() => void store.exportTrajectory('xtc')}
+                disabled={!snap.sessionId || snap.isBusy}
+                title="Export standard GROMACS .xtc compressed trajectory"
+              >
+                .XTC
+              </Button>
+              <Button
+                inline
+                onClick={() => void store.exportTrajectory('pdb')}
+                disabled={!snap.sessionId || snap.isBusy}
+                title="Export companion .pdb topology for VMD/MDAnalysis/ChimeraX"
+              >
+                .PDB
               </Button>
             </div>
           }

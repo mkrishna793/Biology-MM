@@ -1,13 +1,13 @@
 # Biology-MM — Open-Science Atomic Simulation & Interactive 3D Workbench
 
-[![Release](https://img.shields.io/badge/release-v2.5.0-blue.svg)](https://github.com/mkrishna793/Biology-MM/releases/tag/v2.5.0)
+[![Release](https://img.shields.io/badge/release-v2.6.0-blue.svg)](https://github.com/mkrishna793/Biology-MM/releases/tag/v2.6.0)
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](LICENSE)
 [![Formal Proofs](https://img.shields.io/badge/Lean%204%20%2B%20Rocq-0%20sorryAx-purple.svg)](lean/)
 [![Benchmarks](https://img.shields.io/badge/Benchmarks-HECBioSim%20%7C%20MPI%20GROMACS%20%7C%20LAMMPS-orange.svg)](validation/COMPETITIVE_BENCHMARK_REPORT.md)
 
 **Biology-MM** is an open-science, formally grounded molecular dynamics and materials physics platform built to **democratize multi-million-atom atomic simulation**. Instead of requiring multi-GPU supercomputers or closed commercial toolchains, Biology-MM lets scientists, students, and researchers simulate **biology, chemistry, and condensed-matter physics** atom-by-atom on a single laptop — and watch every atom, bond, force vector, and electrostatic field evolve live in the browser.
 
-> **Production-Ready & Community-Driven:** Biology-MM v2.5.0 is production-ready across our native Metal/CPU kernels, Python SDK, and WebGL2 Studio. If you encounter any issue in the UI or in a simulation, please [open a GitHub Issue](https://github.com/mkrishna793/Biology-MM/issues) with your structure/parameters so we can fix it promptly.
+> **Production-Ready & Community-Driven:** Biology-MM v2.6.0 is production-ready across our native Metal/CPU kernels, Python SDK, and WebGL2 Studio. If you encounter any issue in the UI or in a simulation, please [open a GitHub Issue](https://github.com/mkrishna793/Biology-MM/issues) with your structure/parameters so we can fix it promptly.
 
 ---
 
@@ -38,9 +38,9 @@ cd studio
 ```
 
 Then open **`http://127.0.0.1:8765`** in your browser:
-1. **Load any structure:** Upload `.cif`, `.mmcif`, `.pdb`, `.gro`, `.xyz`, `.data` (LAMMPS), or `.prmtop`/`.inpcrd` (AMBER) — or fetch any PDB/EMDB entry directly in **Download Structure** (e.g., `1CRN`, `1TQN`, `3J3Y`, `5J7V`) and click **Simulate Active Mol\* Structure**.
+1. **Load any structure:** Upload `.cif`, `.mmcif`, `.pdb`, `.gro`, `.xyz`, `.data` (LAMMPS), or `.prmtop`/`.inpcrd` (AMBER), fetch any **AlphaFold DB** entry by UniProt ID directly in the **Prep** tab (e.g., `P69905`, `P00533`), or fetch any PDB/EMDB entry in **Download Structure** (`1CRN`, `8C6J`, `3J3Y`, `5J7V`) and click **Simulate Active Mol\* Structure**.
 2. **Scale interactively (`Scale` tab):** Adjust the **3-Zone Multiscale Focus Sphere** (`AA Rad` / `CG Rad`) to focus up to **65,536 All-Atom (`AA`)** atoms on the **Apple Metal GPU** while simulating millions of surrounding atoms in **`Tryte 27+5`** tiles.
-3. **Run & Steer (`Run` tab):** Press **Play**, steer **Temperature (K)** or **E-Field**, switch live coloring (`Force Magnitude`, `Kinetic Temp`, `Charge Potential`, `Multiscale Zone`), click any atom to inspect or tug it with **Steered MD (`Pull +5 Å`)**, export `.mvsx` scenes from the UI, or export standard `.dcd`, `.xtc`, and `.pdb` trajectories via the REST API (`/api/sessions/{sid}/export/{dcd,xtc,pdb}`) and Python SDK.
+3. **Run & Steer (`Run` tab):** Press **Play**, steer **Temperature (K)** or **E-Field**, switch live coloring (`Force Magnitude`, `Kinetic Temp`, `Charge Potential`, `Multiscale Zone`), click any atom to inspect or tug it with **Steered MD (`Pull +5 Å`)**, and export `.mvsx` scenes or standard `.dcd`, `.xtc`, and `.pdb` trajectories directly from the **Run** tab (or via the REST API and Python SDK).
 
 ---
 
@@ -56,6 +56,7 @@ Biology-MM solves this with four architectural innovations:
 2. **Symmetry-Compact Multiscale Engine (`0.05 B/atom`):** For viral capsids and crystalline assemblies (`40,000,000` atoms), stores only the asymmetric unit + $4\times 4$ transforms (`1.82 MB` total RAM — **`3,519×` memory reduction** vs. `7,340 MB` float64).
 3. **Apple Metal GPU-Resident Batched Verlet (`3,484 ns/day` @ 2 fs | `6,969 ns/day` @ 4 fs HMR on a 216-atom unbonded LJ fluid micro-benchmark):** Executes 1,000+ symplectic Velocity-Verlet steps inside a single Metal command buffer with zero Python/CPU overhead (`0.0496 ms/step`).
 4. **Formally Verified Mechanics (`0 sorryAx`):** Exact centroid/residual-moment factorization (`Harmonic.lean`) and Velocity-Verlet Shadow Hamiltonian invariants (`Shadow.lean`) are machine-checked in **Lean 4** and **Rocq**, with **HMC Metropolis Shadow-$H$ guards** preventing energy blowups during interactive steering.
+5. **AlphaFold DB (`pLDDT` + `PAE`) & ATLAS Flexibility Pipeline (`v2.6.0`):** Fetches predicted structures and `PAE JSON` directly by UniProt ID, partitions rigid domains vs. flexible inter-domain hinges (`cluster_pae_domains`), automatically focuses the Metal All-Atom zone on low-`pLDDT` loops/hinges, and applies smooth confidence-weighted restraints with active-zone C¹-smooth DSF electrostatics.
 
 ---
 
@@ -189,7 +190,10 @@ For full Python SDK tutorials, see [`OPEN_SCIENCE_QUICKSTART.md`](OPEN_SCIENCE_Q
 ## Running Verification Tests
 ```bash
 # Python Open-Science & Studio End-to-End Tests
-PYTHONPATH="python:studio/backend" pytest studio/backend/tests/test_open_science_v2.py studio/backend/tests/test_tryte_tiles_and_full_atom.py studio/backend/tests/test_backend_api.py -q
+PYTHONPATH="python:studio/backend" pytest studio/backend/tests/test_alphafold_v26.py studio/backend/tests/test_open_science_v2.py studio/backend/tests/test_tryte_tiles_and_full_atom.py studio/backend/tests/test_backend_api.py -q
+
+# AlphaFold PAE/pLDDT & ATLAS-Style Flexibility Validation
+PYTHONPATH="python:studio/backend" python3 validation/run_atlas_validation.py
 
 # Full Multi-Domain Competitive & Accuracy Benchmarks
 PYTHONPATH="python:studio/backend" python3 validation/run_competitive_benchmarks.py

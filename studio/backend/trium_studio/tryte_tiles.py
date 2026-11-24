@@ -28,6 +28,7 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
 
 import numpy as np
 from scipy.spatial import cKDTree
+from scipy.special import erfc
 
 from .engine_core import (
     KB_KJ_MOL_K,
@@ -743,12 +744,14 @@ class TryteTileFullAtomSession:
                 self._explicit_bonds = np.stack([lo, hi], axis=1).astype(np.int32, copy=False)
             else:
                 self._explicit_bonds = np.zeros((0, 2), dtype=np.int32)
+            self._peano_perm: Optional[np.ndarray] = perm.copy() if n <= 65_536 else None
             del perm
         else:
             self.positions_nm = np.zeros((0, 3), dtype=np.float32)
             self.atomic_numbers = np.zeros(0, dtype=np.uint8)
             self.charges = np.zeros(0, dtype=np.float32)
             self._explicit_bonds = np.zeros((0, 2), dtype=np.int32)
+            self._peano_perm = None
 
         self._has_nonzero_charges: bool = bool(n > 0 and np.any(self.charges != 0.0))
 
@@ -778,6 +781,10 @@ class TryteTileFullAtomSession:
         self._tryte_pair_count: int = 0
         self._tile_k_net: float = 200.0
         self._tile_k_resid: float = 120.0
+        # Optional per-atom pLDDT harmonic scaffold restraints (AlphaFold/ATLAS confidence weighting)
+        self._plddt_restraint_k: Optional[np.ndarray] = None
+        self._plddt_restraint_ref_nm: Optional[np.ndarray] = None
+        self._alpha_dsf: float = 0.25
 
         # Simulation parameters
         self.mode: str = str(mode or "metal_verlet")
@@ -1335,6 +1342,36 @@ class TryteTileFullAtomSession:
                 nb_mask = ~is_bonded
                 cand_i = cand_i[nb_mask]
                 cand_j = cand_j[nb_mask]
+            if cand_i.size > 0 and self._explicit_bonds.shape[0] > 0:
+                inv_aa = {int(a): loc for loc, a in enumerate(self._active_atom_indices)}
+                adj_b: List[List[int]] = [[] for _ in range(n_aa)]
+                ex_list: List[int] = []
+                for bi_r, bj_r in self._explicit_bonds:
+                    li = inv_aa.get(int(bi_r))
+                    lj = inv_aa.get(int(bj_r))
+                    if li is not None and lj is not None and li != lj:
+                        lo_l, hi_l = (li, lj) if li < lj else (lj, li)
+                        ex_list.append(lo_l * n_aa + hi_l)
+                        adj_b[li].append(lj)
+                        adj_b[lj].append(li)
+                for nbrs in adj_b:
+                    deg = len(nbrs)
+                    for a_i in range(deg):
+                        u = nbrs[a_i]
+                        for b_i in range(a_i + 1, deg):
+                            v = nbrs[b_i]
+                            lo_l, hi_l = (u, v) if u < v else (v, u)
+                            ex_list.append(lo_l * n_aa + hi_l)
+                if ex_list:
+                    ex_arr = np.unique(np.asarray(ex_list, dtype=np.int64))
+                    keys2 = cand_i.astype(np.int64) * np.int64(n_aa) + cand_j.astype(np.int64)
+                    p2 = np.searchsorted(ex_arr, keys2)
+                    in_b2 = p2 < ex_arr.size
+                    is_ex2 = np.zeros(keys2.size, dtype=bool)
+                    is_ex2[in_b2] = ex_arr[p2[in_b2]] == keys2[in_b2]
+                    keep2 = ~is_ex2
+                    cand_i = cand_i[keep2]
+                    cand_j = cand_j[keep2]
 
             self._nb_i = cand_i
             self._nb_j = cand_j
@@ -1402,7 +1439,15 @@ class TryteTileFullAtomSession:
                 r_b = np.sqrt(np.maximum(np.sum(d_b * d_b, axis=1), 1e-24))
                 dr = r_b - self._enm_r0.astype(np.float64)
                 r0_enm = self._enm_r0.astype(np.float64)
-                k_b = np.where(r0_enm < 0.23, 12000.0, float(self._enm_k_bond))
+                enm_base = float(self._enm_k_bond)
+                if self._plddt_restraint_k is not None and self._plddt_restraint_k.size == n:
+                    k_aa = self._plddt_restraint_k[aa_idx].astype(np.float64)
+                    k_max = max(float(np.max(k_aa)), 1.0)
+                    conf_pair = np.minimum(k_aa[self._enm_i], k_aa[self._enm_j]) / k_max
+                    enm_noncov = enm_base * (0.005 + 0.995 * conf_pair)
+                else:
+                    enm_noncov = enm_base
+                k_b = np.where(r0_enm < 0.23, 12000.0, enm_noncov)
                 u_tot += 0.5 * float(np.sum(k_b * dr * dr))
                 f_enm = d_b * (-(k_b * dr) / r_b)[:, None]
                 for dim in range(3):
@@ -1456,7 +1501,52 @@ class TryteTileFullAtomSession:
                     u_tot += float(np.sum(u_pair))
                     self.virial += d_ij.T @ f_ij
 
+                    # A3: Active-zone C1-smooth Damped Shifted Force (DSF) short-range Coulomb electrostatics
+                    if self._has_nonzero_charges:
+                        q_aa = self.charges[aa_idx].astype(np.float64)
+                        qq = q_aa[ii] * q_aa[jj]
+                        nz_q = np.abs(qq) > 1e-12
+                        if np.any(nz_q):
+                            r_q = np.maximum(r[nz_q], 0.08)
+                            d_q = d_ij[nz_q]
+                            qq_nz = qq[nz_q]
+                            alpha = float(self._alpha_dsf)
+                            two_a_sqrt_pi = 2.0 * alpha / math.sqrt(math.pi)
+                            erfc_rc = float(erfc(alpha * rc))
+                            exp_rc = math.exp(-(alpha * rc) ** 2)
+                            v_rc = erfc_rc / rc
+                            f_rc = erfc_rc / (rc * rc) + two_a_sqrt_pi * exp_rc / rc
+
+                            erfc_r = erfc(alpha * r_q)
+                            exp_r = np.exp(-((alpha * r_q) ** 2))
+                            u_coul = COULOMB_KJ_NM_MOL_E2 * qq_nz * (
+                                (erfc_r / r_q) - v_rc + f_rc * (r_q - rc)
+                            )
+                            f_mag_coul = COULOMB_KJ_NM_MOL_E2 * qq_nz * (
+                                (erfc_r / (r_q * r_q)) + two_a_sqrt_pi * (exp_r / r_q) - f_rc
+                            )
+                            f_coul = d_q * (f_mag_coul / r_q)[:, None]
+                            ii_q = ii[nz_q]
+                            jj_q = jj[nz_q]
+                            for dim in range(3):
+                                f_aa[:, dim] += np.bincount(ii_q, weights=f_coul[:, dim], minlength=n_aa) - np.bincount(
+                                    jj_q, weights=f_coul[:, dim], minlength=n_aa
+                                )
+                            u_tot += float(np.sum(u_coul))
+                            self.virial += d_q.T @ f_coul
+
             self.forces[aa_idx] += f_aa.astype(np.float32)
+
+        # --- Factor A4: Optional Per-Atom pLDDT Harmonic Scaffold Restraints ---
+        if (
+            self._plddt_restraint_k is not None
+            and self._plddt_restraint_ref_nm is not None
+            and self._plddt_restraint_k.size == n
+        ):
+            k_arr = self._plddt_restraint_k.astype(np.float64)
+            dr_res = self.positions_nm.astype(np.float64) - self._plddt_restraint_ref_nm.astype(np.float64)
+            u_tot += 0.5 * float(np.sum(k_arr * np.sum(dr_res * dr_res, axis=1)))
+            self.forces += (-k_arr[:, None] * dr_res).astype(np.float32)
 
         # --- Factor B: Exact Harmonic.lean Intra-Tile Residual-Moment Coupling (ALL N atoms) ---
         # U_rm(t) = 0.5 * k_resid * (sqrt(R2_t + eps) - S0_t)^2
@@ -1851,6 +1941,33 @@ class TryteTileFullAtomSession:
             self._q_thermo_cum = 0.0
             self._initial_total_energy = float(self.potential_energy + self.kinetic_energy)
             return self._build_multiscale_summary()
+
+    def set_plddt_restraints(
+        self,
+        restraint_k_per_atom: Optional[np.ndarray],
+    ) -> Dict[str, Any]:
+        """Attach or clear per-atom pLDDT-weighted harmonic scaffold restraints (kJ/(mol*nm^2))."""
+        with self._lock:
+            if restraint_k_per_atom is None:
+                self._plddt_restraint_k = None
+                self._plddt_restraint_ref_nm = None
+                self._evaluate_state()
+                return {"active": False, "mean_k": 0.0, "restrained_atoms": 0}
+            k_arr = np.asarray(restraint_k_per_atom, dtype=np.float32).reshape(-1)
+            if k_arr.size != self.n_atoms:
+                raise ValueError(f"restraint_k_per_atom length ({k_arr.size}) must match n_atoms ({self.n_atoms})")
+            if self._peano_perm is not None and self._peano_perm.size == self.n_atoms:
+                k_arr = k_arr[self._peano_perm]
+            self._plddt_restraint_k = np.maximum(k_arr, np.float32(0.0)).copy()
+            self._plddt_restraint_ref_nm = self.positions_nm.copy()
+            self._evaluate_state()
+            self._q_thermo_cum = 0.0
+            self._initial_total_energy = float(self.potential_energy + self.kinetic_energy)
+            return {
+                "active": True,
+                "mean_k": float(np.mean(self._plddt_restraint_k)),
+                "restrained_atoms": int(np.sum(self._plddt_restraint_k > 1e-6)),
+            }
 
     def set_delta_threshold(
         self,

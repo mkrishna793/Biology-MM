@@ -1585,6 +1585,14 @@ class SimulationSession:
             except Exception:
                 pass
 
+        # Optional per-atom pLDDT harmonic scaffold restraints (AlphaFold/ATLAS confidence weighting)
+        plddt_k = getattr(self, "_plddt_restraint_k", None)
+        plddt_ref = getattr(self, "_plddt_restraint_ref_nm", None)
+        if plddt_k is not None and plddt_ref is not None and plddt_k.size == self.n_real:
+            dr_res = self.positions[: self.n_real] - plddt_ref
+            self.potential_energy += 0.5 * float(np.sum(plddt_k * np.sum(dr_res * dr_res, axis=1)))
+            self.forces[: self.n_real] += -plddt_k[:, None] * dr_res
+
         act = self.active_mask
         p_act = self.momenta[act]
         m_act = self.masses[act]
@@ -1995,6 +2003,31 @@ class SimulationSession:
                     "last_dirty_ratio": float(self._last_dirty_ratio),
                     "last_dirty_tiles": int(self._last_dirty_tiles),
                 },
+            }
+
+    def set_plddt_restraints(
+        self,
+        restraint_k_per_atom: Optional[np.ndarray],
+    ) -> Dict[str, Any]:
+        """Attach or clear per-atom pLDDT-weighted harmonic scaffold restraints (kJ/(mol*nm^2))."""
+        with self._lock:
+            if restraint_k_per_atom is None:
+                self._plddt_restraint_k = None
+                self._plddt_restraint_ref_nm = None
+                self._evaluate_state()
+                return {"active": False, "mean_k": 0.0, "restrained_atoms": 0}
+            k_arr = np.asarray(restraint_k_per_atom, dtype=np.float64).reshape(-1)
+            if k_arr.size != self.n_real:
+                raise ValueError(f"restraint_k_per_atom length ({k_arr.size}) must match n_real ({self.n_real})")
+            self._plddt_restraint_k = np.maximum(k_arr, 0.0).copy()
+            self._plddt_restraint_ref_nm = self.positions[: self.n_real].copy()
+            self._evaluate_state()
+            self._q_thermo_cum = 0.0
+            self._initial_total_energy = float(self.potential_energy + self.kinetic_energy)
+            return {
+                "active": True,
+                "mean_k": float(np.mean(self._plddt_restraint_k)),
+                "restrained_atoms": int(np.sum(self._plddt_restraint_k > 1e-6)),
             }
 
     def steer(

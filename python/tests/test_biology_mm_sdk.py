@@ -614,7 +614,7 @@ def test_cli_info():
         check=True,
     )
     payload = json.loads(proc.stdout)
-    assert payload["sdk_version"] == "2.5.0"
+    assert payload["sdk_version"] == "2.6.0"
     assert payload["cpu_bridge_loaded"] is True
     if get_bridge().has_gpu_bridge:
         assert payload["gpu_bridge_loaded"] is True
@@ -625,4 +625,4 @@ def test_cli_info():
         assert payload["hardware"]["backend"] == "cpu"
         assert payload["hardware"]["has_gpu"] is False
     assert payload["julia_toolchain"]["available"] is True
-    assert biology_mm.__version__ == "2.5.0"
+    assert biology_mm.__version__ == "2.6.0"

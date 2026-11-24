@@ -28,6 +28,9 @@ from biology_mm import (
     write_dcd,
     write_pdb_topology,
     write_xtc,
+    compute_confidence_guided_setup,
+    fetch_alphafold_entry,
+    parse_alphafold_plddt_any,
 )
 
 from .cif_builder import build_mmcif_from_session
@@ -53,7 +56,7 @@ from .sandbox import execute_user_code
 from .structure_loader import _infer_bonds_pbc, load_structure_from_bytes, load_structure_pair_from_bytes
 from .ws_manager import PALETTE_NAMES, ManagedSession, SessionManager
 
-STUDIO_VERSION = "2.5.0"
+STUDIO_VERSION = "2.6.0"
 _DIST_CANDIDATES = [
     Path(__file__).resolve().parents[2] / "molstar" / "apps" / "biology-mm-studio" / "dist",
     Path(__file__).resolve().parents[2] / "frontend" / "biology-mm-studio" / "dist",
@@ -1283,6 +1286,122 @@ def create_app(dist_dir: Optional[Path] = None) -> FastAPI:
     @application.websocket("/ws/stream/{sid}")
     async def ws_stream(websocket: WebSocket, sid: str) -> None:
         await manager.handle_websocket(websocket, sid)
+
+    @application.post("/api/sessions/alphafold/{uniprot_id}")
+    async def create_session_from_alphafold(
+        uniprot_id: str,
+        mode: str = "metal_verlet",
+        temperature: float = 300.0,
+        dt: float = 0.002,
+        storage_mode: str = "auto",
+        apply_plddt_restraints: bool = True,
+        k_high: float = 250.0,
+    ) -> Dict[str, Any]:
+        """Fetch an AlphaFold DB structure + PAE JSON by UniProt ID and start a confidence-guided simulation."""
+        mode_sel = str(storage_mode or "auto").strip().lower()
+        if mode_sel not in ("auto", "tryte-all-atom", "float64-full", "full"):
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid storage_mode '{storage_mode}'; expected 'auto', 'tryte-all-atom', or 'float64-full'",
+            )
+        try:
+            entry = fetch_alphafold_entry(uniprot_id)
+        except ValueError as e:
+            raise HTTPException(status_code=404, detail=str(e))
+        except Exception as e:
+            raise HTTPException(status_code=502, detail=str(e))
+
+        raw_bytes = entry.structure_text.encode("utf-8")
+        try:
+            sys, meta = load_structure_from_bytes(raw_bytes, entry.filename)
+        except Exception as e:
+            raise HTTPException(status_code=400, detail=f"Failed to parse AlphaFold structure '{entry.filename}': {e}")
+
+        conf = parse_alphafold_plddt_any(entry.structure_text, fmt=entry.structure_format)
+        guided = compute_confidence_guided_setup(
+            sys.positions,
+            conf,
+            pae_matrix=entry.pae_matrix,
+            k_high=float(k_high),
+        )
+        meta["title"] = f"{entry.entry_id} ({entry.gene})" if entry.gene else entry.entry_id
+        meta["alphafold"] = {
+            "uniprot_id": entry.uniprot_id,
+            "entry_id": entry.entry_id,
+            "gene": entry.gene,
+            "organism": entry.organism,
+            "source_url": entry.source_url,
+            "pae_url": entry.pae_url,
+            "guided_setup": guided.to_dict(),
+        }
+
+        if mode_sel in ("tryte-all-atom", "full") or (mode_sel == "auto" and sys.n_atoms > 50_000):
+            charges_f32 = sys.charges.astype(np.float32) if np.any(sys.charges != 0.0) else None
+            sim: Any = TryteTileFullAtomSession(
+                positions_nm=sys.positions.astype(np.float32),
+                atomic_numbers=sys.names,
+                charges=charges_f32,
+                bonds=sys.bonds,
+                box_nm=sys.box_lengths,
+                mode=mode,
+                dt=dt,
+                temperature=temperature,
+                focus_center_ang=guided.focus_center_ang,
+                aa_radius_ang=guided.aa_radius_ang,
+                cg_radius_ang=guided.cg_radius_ang,
+                structure_metadata=meta,
+            )
+        else:
+            sim = SimulationSession(
+                sys,
+                mode=mode,
+                dt=dt,
+                temperature=temperature,
+                rcut=1.0,
+                alpha_dsf=0.25 if np.any(sys.charges != 0.0) else 0.0,
+                structure_metadata=meta,
+            )
+
+        minimization = sim.minimize()
+        restraint_report = None
+        if apply_plddt_restraints and hasattr(sim, "set_plddt_restraints"):
+            try:
+                restraint_report = sim.set_plddt_restraints(guided.restraint_k_per_atom)
+            except Exception:
+                restraint_report = None
+
+        record = manager.register_session(
+            sim,
+            default_channel="force-magnitude",
+            default_palette="plasma",
+        )
+        metrics = sim.get_metrics()
+        metrics["session_id"] = record.session_id
+        return {
+            "session_id": record.session_id,
+            "title": meta["title"],
+            "uniprot_id": entry.uniprot_id,
+            "entry_id": entry.entry_id,
+            "num_atoms": int(sys.n_atoms),
+            "num_bonds": int(len(sys.bonds)),
+            "storage_mode": metrics.get("storage_mode", "float64-full"),
+            "minimization": minimization,
+            "alphafold_setup": guided.to_dict(),
+            "restraints": restraint_report,
+            "metrics": metrics,
+        }
+
+    @application.get("/api/sessions/{sid}/alphafold-analysis")
+    async def get_session_alphafold_analysis(sid: str) -> Dict[str, Any]:
+        """Return AlphaFold pLDDT / PAE domain & Focus Zone analysis if present on the session."""
+        record = _require_session(manager, sid)
+        meta = getattr(record.session, "structure_metadata", None) or {}
+        af_info = meta.get("alphafold")
+        return {
+            "session_id": sid,
+            "has_alphafold": bool(af_info),
+            "alphafold": af_info,
+        }
 
     index_html = resolved_dist / "index.html"
     if index_html.is_file():
