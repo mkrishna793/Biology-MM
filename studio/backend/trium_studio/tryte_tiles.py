@@ -875,6 +875,8 @@ class TryteTileFullAtomSession:
         self._enm_j: np.ndarray = np.zeros(0, dtype=np.int32)
         self._enm_r0: np.ndarray = np.zeros(0, dtype=np.float32)
         self._enm_pair_keys: np.ndarray = np.zeros(0, dtype=np.int64)
+        self._coincident_i: np.ndarray = np.zeros(0, dtype=np.int32)
+        self._coincident_j: np.ndarray = np.zeros(0, dtype=np.int32)
 
         self._nb_skin_nm: float = 0.15
         self._nb_i: np.ndarray = np.zeros(0, dtype=np.int32)
@@ -1199,14 +1201,17 @@ class TryteTileFullAtomSession:
             rc_safe = min(float(self.rcut), 0.45 * min_L)
             skin = min(0.18, max(0.05, 0.48 * min_L - rc_safe))
 
-            exclusions = list(zip(self._enm_i.tolist(), self._enm_j.tolist())) if self._enm_i.size > 0 else None
+            exclusions = list(zip(self._enm_i.tolist(), self._enm_j.tolist())) if self._enm_i.size > 0 else []
+            if self._coincident_i.size > 0:
+                exclusions.extend(zip(self._coincident_i.tolist(), self._coincident_j.tolist()))
+            exclusions_arg = exclusions if exclusions else None
             plan = _build_spatial_gpu_verlet_plan(
                 positions=pos_local,
                 sigma=sig_aa,
                 epsilon=eps_aa,
                 charges=chg_aa,
                 box=box_aa,
-                exclusions=exclusions,
+                exclusions=exclusions_arg,
                 rcut=rc_safe,
                 skin=max(0.02, skin),
                 alpha_dsf=0.0,
@@ -1257,6 +1262,8 @@ class TryteTileFullAtomSession:
             self._enm_j = np.zeros(0, dtype=np.int32)
             self._enm_r0 = np.zeros(0, dtype=np.float32)
             self._enm_pair_keys = np.zeros(0, dtype=np.int64)
+            self._coincident_i = np.zeros(0, dtype=np.int32)
+            self._coincident_j = np.zeros(0, dtype=np.int32)
             return
 
         pos_aa = self.positions_nm[idx].astype(np.float64)
@@ -1267,21 +1274,25 @@ class TryteTileFullAtomSession:
             self._enm_j = np.zeros(0, dtype=np.int32)
             self._enm_r0 = np.zeros(0, dtype=np.float32)
             self._enm_pair_keys = np.zeros(0, dtype=np.int64)
+            self._coincident_i = np.zeros(0, dtype=np.int32)
+            self._coincident_j = np.zeros(0, dtype=np.int32)
             return
 
-        ii = pairs[:, 0].astype(np.int32, copy=False)
-        jj = pairs[:, 1].astype(np.int32, copy=False)
-        d = pos_aa[ii] - pos_aa[jj]
+        ii_all = pairs[:, 0].astype(np.int32, copy=False)
+        jj_all = pairs[:, 1].astype(np.int32, copy=False)
+        d = pos_aa[ii_all] - pos_aa[jj_all]
         r0 = np.sqrt(np.maximum(np.sum(d * d, axis=1), 0.0))
         valid = r0 > 1e-4
-        ii = ii[valid]
-        jj = jj[valid]
+        ii = ii_all[valid]
+        jj = jj_all[valid]
         r0 = r0[valid].astype(np.float32)
 
         self._enm_i = ii
         self._enm_j = jj
         self._enm_r0 = r0
-        keys = ii.astype(np.int64) * np.int64(n_aa) + jj.astype(np.int64)
+        self._coincident_i = ii_all[~valid]
+        self._coincident_j = jj_all[~valid]
+        keys = ii_all.astype(np.int64) * np.int64(n_aa) + jj_all.astype(np.int64)
         keys.sort()
         self._enm_pair_keys = keys
 
