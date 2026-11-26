@@ -1,9 +1,9 @@
 {
   "name": "@molstar/biology-mm-studio",
-  "version": "1.0.0",
+  "version": "3.0.0",
   "private": true,
   "type": "module",
-  "description": "Biology-MM Studio — GPU-accelerated nanotech & biomolecular simulation workbench built on Mol* v6",
+  "description": "Biology-MM Studio \u2014 GPU-accelerated nanotech & biomolecular simulation workbench built on Mol* v6",
   "license": "MIT",
   "engines": {
     "node": ">=22.13.0"

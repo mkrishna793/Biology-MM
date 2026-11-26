@@ -1,6 +1,6 @@
 {
   "name": "@molstar/biology-mm-extension",
-  "version": "1.0.0",
+  "version": "3.0.0",
   "type": "module",
   "description": "Mol* v6 GPU-accelerated extension for Biology-MM live streaming, physics colormaps, and volumetric fields",
   "license": "MIT",

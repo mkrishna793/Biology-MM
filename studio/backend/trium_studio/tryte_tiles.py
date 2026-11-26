@@ -1274,7 +1274,18 @@ class TryteTileFullAtomSession:
             return
 
         pos_aa = self.positions_nm[idx].astype(np.float64)
-        tree = cKDTree(pos_aa)
+        box_diag = np.diag(self.box_H).astype(np.float64)
+        use_pbc_enm = (
+            self._is_periodic_box
+            and n_aa == self.n_atoms
+            and np.all(box_diag > 2.0 * float(self._enm_cutoff_nm))
+        )
+        if use_pbc_enm:
+            hi_box = np.nextafter(box_diag, 0.0)
+            pos_tree = np.minimum(np.mod(pos_aa, box_diag[None, :]), hi_box[None, :])
+            tree = cKDTree(pos_tree, boxsize=box_diag)
+        else:
+            tree = cKDTree(pos_aa)
         pairs = tree.query_pairs(r=float(self._enm_cutoff_nm), output_type="ndarray")
         if pairs.size == 0:
             self._enm_i = np.zeros(0, dtype=np.int32)
@@ -1288,6 +1299,8 @@ class TryteTileFullAtomSession:
         ii_all = pairs[:, 0].astype(np.int32, copy=False)
         jj_all = pairs[:, 1].astype(np.int32, copy=False)
         d = pos_aa[ii_all] - pos_aa[jj_all]
+        if use_pbc_enm:
+            d -= np.round(d / box_diag[None, :]) * box_diag[None, :]
         r0 = np.sqrt(np.maximum(np.sum(d * d, axis=1), 0.0))
         valid = r0 > 1e-4
         ii = ii_all[valid]
@@ -1436,6 +1449,10 @@ class TryteTileFullAtomSession:
             # A1: Native Elastic Network
             if self._enm_i.size > 0:
                 d_b = pos_aa[self._enm_i] - pos_aa[self._enm_j]
+                if self._is_periodic_box and n_aa == n:
+                    box_diag = np.diag(self.box_H).astype(np.float64)
+                    if np.all(box_diag > 2.0 * float(self._enm_cutoff_nm)):
+                        d_b -= np.round(d_b / box_diag[None, :]) * box_diag[None, :]
                 r_b = np.sqrt(np.maximum(np.sum(d_b * d_b, axis=1), 1e-24))
                 dr = r_b - self._enm_r0.astype(np.float64)
                 r0_enm = self._enm_r0.astype(np.float64)
@@ -1555,7 +1572,21 @@ class TryteTileFullAtomSession:
             s_cur = np.sqrt(self.tile_set.residual_moments.astype(np.float64) + 1e-6)
             s_ref = self._tile_ref_rms.astype(np.float64)
             ds = s_cur - s_ref
-            k_rm = float(self._tile_k_resid)
+            k_rm_base = float(self._tile_k_resid)
+            if self._plddt_restraint_k is not None and self._plddt_restraint_k.size == n:
+                k_max = max(float(np.max(self._plddt_restraint_k)), 1.0)
+                tile_conf = np.ones(n_t, dtype=np.float64)
+                n_full_c = n // t_sz
+                if n_full_c > 0:
+                    tile_conf[:n_full_c] = np.mean(
+                        self._plddt_restraint_k[: n_full_c * t_sz].reshape((n_full_c, t_sz)),
+                        axis=1,
+                    ) / k_max
+                if n % t_sz > 0:
+                    tile_conf[n_full_c] = float(np.mean(self._plddt_restraint_k[n_full_c * t_sz :])) / k_max
+                k_rm = k_rm_base * (0.04 + 0.96 * tile_conf)
+            else:
+                k_rm = k_rm_base
             u_rm_tiles = 0.5 * k_rm * (ds * ds)
             u_tot += float(np.sum(u_rm_tiles))
             self.tile_set.tile_energies += u_rm_tiles.astype(np.float32)

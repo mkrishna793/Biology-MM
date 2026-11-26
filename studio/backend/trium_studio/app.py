@@ -56,7 +56,7 @@ from .sandbox import execute_user_code
 from .structure_loader import _infer_bonds_pbc, load_structure_from_bytes, load_structure_pair_from_bytes
 from .ws_manager import PALETTE_NAMES, ManagedSession, SessionManager
 
-STUDIO_VERSION = "2.6.0"
+STUDIO_VERSION = "3.0.0"
 _DIST_CANDIDATES = [
     Path(__file__).resolve().parents[2] / "molstar" / "apps" / "biology-mm-studio" / "dist",
     Path(__file__).resolve().parents[2] / "frontend" / "biology-mm-studio" / "dist",
@@ -129,6 +129,14 @@ class RelaxPayload(BaseModel):
     alpha_sc: float = Field(0.5, gt=0.0)
     lam: float = Field(0.5, gt=0.0, le=1.0)
 
+
+
+
+class ScaleSystemPayload(BaseModel):
+    nx: int = Field(2, ge=1, le=16)
+    ny: int = Field(2, ge=1, le=16)
+    nz: int = Field(2, ge=1, le=16)
+    storage_mode: Optional[str] = None
 
 class MultiscalePayload(BaseModel):
     center_ang: List[float]
@@ -922,6 +930,159 @@ def create_app(dist_dir: Optional[Path] = None) -> FastAPI:
         metrics["session_id"] = sid
         manager.push_current_frame(record, metrics=metrics, reversed_step=False)
         return {"session_id": sid, "multiscale": summary, "metrics": metrics}
+
+    @application.post("/api/sessions/{sid}/scale-system")
+    async def scale_session_system(sid: str, payload: ScaleSystemPayload) -> Dict[str, Any]:
+        """Replicate/scale the active molecule, protein, MOF, or crystal into an (nx x ny x nz) supercell."""
+        record = _require_session(manager, sid)
+        base_sim = record.session
+        nx, ny, nz = int(payload.nx), int(payload.ny), int(payload.nz)
+        n_copies = nx * ny * nz
+
+        with base_sim._lock:
+            if hasattr(base_sim, "positions_nm") and isinstance(base_sim, TryteTileFullAtomSession):
+                base_pos = base_sim.positions_nm.astype(np.float64).copy()
+                base_names = list(base_sim.names)
+                base_q = base_sim.charges.astype(np.float64).copy()
+                base_bonds = list(base_sim.bonds)
+            else:
+                act = np.asarray(base_sim.active_mask, dtype=bool)
+                base_pos = np.asarray(base_sim.positions[act], dtype=np.float64).copy()
+                act_idx = np.flatnonzero(act)
+                base_names = [base_sim.names[int(i)] for i in act_idx]
+                base_q = np.asarray(base_sim.charges[act], dtype=np.float64).copy() if hasattr(base_sim, "charges") else np.zeros(base_pos.shape[0], dtype=np.float64)
+                inv_act = {int(old): new for new, old in enumerate(act_idx)}
+                base_bonds = [
+                    (inv_act[int(i)], inv_act[int(j)])
+                    for i, j in getattr(base_sim, "bonds", [])
+                    if int(i) in inv_act and int(j) in inv_act
+                ]
+            base_box = np.asarray(base_sim.box_H, dtype=np.float64).copy()
+            base_meta = dict(getattr(base_sim, "structure_metadata", None) or {})
+            base_mode = str(getattr(base_sim, "mode", "metal_verlet"))
+            base_dt = float(getattr(base_sim, "dt", 0.002))
+            base_temp = float(getattr(base_sim, "temperature", 300.0))
+
+        n_base = int(base_pos.shape[0])
+        if n_base == 0:
+            raise HTTPException(status_code=400, detail="Cannot scale an empty session")
+        total_atoms = n_base * n_copies
+        if total_atoms > 5_000_000:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Scaled system ({total_atoms:,} atoms) exceeds 5,000,000 interactive supercell cap",
+            )
+
+        is_crystal = bool(base_meta.get("crystallographic"))
+        if is_crystal:
+            vec_a = base_box[:, 0]
+            vec_b = base_box[:, 1]
+            vec_c = base_box[:, 2]
+        else:
+            span = np.ptp(base_pos, axis=0)
+            pad = 0.6  # 6 A buffer between replicated non-periodic molecules
+            vec_a = np.array([max(float(span[0]) + pad, 1.5), 0.0, 0.0], dtype=np.float64)
+            vec_b = np.array([0.0, max(float(span[1]) + pad, 1.5), 0.0], dtype=np.float64)
+            vec_c = np.array([0.0, 0.0, max(float(span[2]) + pad, 1.5)], dtype=np.float64)
+
+        # Vectorized 3D lattice replication
+        grid_shifts = np.array(
+            [
+                ix * vec_a + iy * vec_b + iz * vec_c
+                for ix in range(nx)
+                for iy in range(ny)
+                for iz in range(nz)
+            ],
+            dtype=np.float64,
+        )  # (n_copies, 3)
+        scaled_pos = (base_pos[None, :, :] + grid_shifts[:, None, :]).reshape((total_atoms, 3))
+        scaled_names = base_names * n_copies
+        scaled_q = np.tile(base_q, n_copies)
+
+        scaled_box_lengths = (
+            float(np.linalg.norm(vec_a) * nx),
+            float(np.linalg.norm(vec_b) * ny),
+            float(np.linalg.norm(vec_c) * nz),
+        )
+        scaled_bonds: List[Tuple[int, int]] = []
+        if is_crystal and total_atoms <= 16_000:
+            scaled_bonds = _infer_bonds_pbc(
+                scaled_pos,
+                scaled_names,
+                box_nm=np.array(scaled_box_lengths, dtype=np.float64),
+                max_atoms=16_000,
+            )
+        if not scaled_bonds and base_bonds and total_atoms <= 150_000:
+            for c_idx in range(n_copies):
+                off = c_idx * n_base
+                scaled_bonds.extend((i + off, j + off) for i, j in base_bonds)
+        base_title = str(base_meta.get("title") or "Scaled System")
+        scaled_title = f"{base_title} ({nx}x{ny}x{nz})"
+        scaled_meta = {
+            "title": scaled_title,
+            "format": base_meta.get("format", "supercell"),
+            "num_atoms": total_atoms,
+            "num_bonds": len(scaled_bonds),
+            "crystallographic": is_crystal,
+            "supercell": [nx, ny, nz],
+            "box_ang": [round(v * 10.0, 4) for v in scaled_box_lengths],
+        }
+
+        mode_sel = str(payload.storage_mode or ("tryte-all-atom" if total_atoms > 8_000 else "auto")).strip().lower()
+        if mode_sel in ("tryte-all-atom", "full") or (mode_sel == "auto" and total_atoms > 8_000):
+            charges_f32 = scaled_q.astype(np.float32) if np.any(scaled_q != 0.0) else None
+            new_sim: Any = TryteTileFullAtomSession(
+                positions_nm=scaled_pos.astype(np.float32),
+                atomic_numbers=scaled_names,
+                charges=charges_f32,
+                bonds=scaled_bonds,
+                box_nm=scaled_box_lengths,
+                mode=base_mode,
+                dt=base_dt,
+                temperature=base_temp,
+                structure_metadata=scaled_meta,
+            )
+        else:
+            from biology_mm import AtomicSystem
+            masses_arr = np.array([_ELEMENT_MASSES.get(nm.strip().capitalize(), 12.011) for nm in scaled_names], dtype=np.float64)
+            sys_scaled = AtomicSystem(
+                positions=scaled_pos,
+                masses=masses_arr,
+                charges=scaled_q,
+                names=scaled_names,
+                box_lengths=scaled_box_lengths,
+                bonds=scaled_bonds,
+                units="md",
+            )
+            new_sim = SimulationSession(
+                sys_scaled,
+                mode=base_mode,
+                dt=base_dt,
+                temperature=base_temp,
+                rcut=min(1.0, 0.45 * min(scaled_box_lengths)),
+                alpha_dsf=0.25 if np.any(scaled_q != 0.0) else 0.0,
+                structure_metadata=scaled_meta,
+            )
+
+        minimization = new_sim.minimize()
+        new_rec = manager.register_session(
+            new_sim,
+            default_channel="force-magnitude",
+            default_palette="plasma",
+        )
+        metrics = new_sim.get_metrics()
+        metrics["session_id"] = new_rec.session_id
+        return {
+            "session_id": new_rec.session_id,
+            "title": scaled_title,
+            "num_atoms": total_atoms,
+            "num_bonds": len(scaled_bonds),
+            "scale_factor": [nx, ny, nz],
+            "storage_mode": metrics.get("storage_mode", "tryte-all-atom"),
+            "minimization": minimization,
+            "metrics": metrics,
+        }
+
 
     @application.post("/api/sessions/{sid}/steer-atom")
     async def steer_session_atom(sid: str, payload: SteerAtomPayload) -> Dict[str, Any]:

@@ -18,6 +18,9 @@ interface EngineControlsState extends CollapsableState {
   importMode: SimulationMode;
   tempInput: string;
   alphafoldId: string;
+  scaleNx: string;
+  scaleNy: string;
+  scaleNz: string;
   efieldInput: string;
   focusCenterX: string;
   focusCenterY: string;
@@ -101,6 +104,9 @@ export class BiologyMmEngineControls extends CollapsableControls<CollapsableProp
       importMode: 'metal_verlet',
       tempInput: '300',
       alphafoldId: '',
+      scaleNx: '2',
+      scaleNy: '2',
+      scaleNz: '2',
       efieldInput: '0',
       focusCenterX: '0.0',
       focusCenterY: '0.0',
@@ -518,6 +524,90 @@ export class BiologyMmEngineControls extends CollapsableControls<CollapsableProp
             <span>Rigid</span>
             <strong>{counts.rigid_scaffold.toLocaleString()}</strong>
           </div>
+        </div>
+
+        <div className="bmm-section-subhdr">System Scaling (Supercell / Multi-Copy)</div>
+
+        <ControlRow
+          label="Replicate"
+          control={
+            <div className="bmm-msp-xyz-grid">
+              <input
+                type="number"
+                min={1}
+                max={16}
+                step={1}
+                className="msp-form-control"
+                aria-label="Scale X"
+                title="Replicate along X"
+                value={this.state.scaleNx}
+                onChange={(e: ChangeEvent<HTMLInputElement>) =>
+                  this.setState({ scaleNx: e.target.value })
+                }
+              />
+              <input
+                type="number"
+                min={1}
+                max={16}
+                step={1}
+                className="msp-form-control"
+                aria-label="Scale Y"
+                title="Replicate along Y"
+                value={this.state.scaleNy}
+                onChange={(e: ChangeEvent<HTMLInputElement>) =>
+                  this.setState({ scaleNy: e.target.value })
+                }
+              />
+              <input
+                type="number"
+                min={1}
+                max={16}
+                step={1}
+                className="msp-form-control"
+                aria-label="Scale Z"
+                title="Replicate along Z"
+                value={this.state.scaleNz}
+                onChange={(e: ChangeEvent<HTMLInputElement>) =>
+                  this.setState({ scaleNz: e.target.value })
+                }
+              />
+            </div>
+          }
+        />
+
+        <div className="bmm-action-stack">
+          <div className="bmm-msp-btn-grid-2">
+            <Button
+              inline
+              disabled={!snap.sessionId || snap.isBusy}
+              onClick={() => void store.scaleSystem(2, 2, 2)}
+              title="Replicate active structure into a 2x2x2 supercell (8x atoms)"
+            >
+              2×2×2 (8×)
+            </Button>
+            <Button
+              inline
+              disabled={!snap.sessionId || snap.isBusy}
+              onClick={() => void store.scaleSystem(3, 3, 3)}
+              title="Replicate active structure into a 3x3x3 supercell (27x atoms)"
+            >
+              3×3×3 (27×)
+            </Button>
+          </div>
+          <Button
+            commit="on"
+            className="bmm-msp-primary-btn"
+            disabled={!snap.sessionId || snap.isBusy}
+            onClick={() => {
+              const nx = Math.max(1, Number(this.state.scaleNx) || 1);
+              const ny = Math.max(1, Number(this.state.scaleNy) || 1);
+              const nz = Math.max(1, Number(this.state.scaleNz) || 1);
+              void store.scaleSystem(nx, ny, nz);
+            }}
+            title="Scale the active molecule, protein, MOF, or crystal into an nx × ny × nz supercell and simulate live"
+          >
+            Scale System
+          </Button>
         </div>
 
         <div className="bmm-section-subhdr">Dirty-Tile Delta Streaming</div>

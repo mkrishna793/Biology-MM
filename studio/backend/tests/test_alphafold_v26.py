@@ -164,5 +164,32 @@ class TestAlphaFoldAndDeepEngineV26(unittest.TestCase):
             self.assertEqual(client.get(f"/api/sessions/{sid}/export/pdb").status_code, 200)
 
 
+    def test_v3_scale_system_supercell_and_version(self) -> None:
+        from biology_mm import __version__
+        from trium_studio.app import STUDIO_VERSION
+        self.assertEqual(__version__, "3.0.0")
+        self.assertEqual(STUDIO_VERSION, "3.0.0")
+
+        app = create_app()
+        client = TestClient(app)
+        # Upload sample 6-atom protein and scale 2x2x2 -> 48 atoms
+        up = client.post(
+            "/api/sessions/upload?filename=mini_af.pdb&storage_mode=float64-full",
+            content=SAMPLE_AF_PDB.encode("utf-8"),
+        )
+        self.assertEqual(up.status_code, 200, up.text)
+        sid = up.json()["session_id"]
+
+        sc = client.post(f"/api/sessions/{sid}/scale-system", json={"nx": 2, "ny": 2, "nz": 2, "storage_mode": "tryte-all-atom"})
+        self.assertEqual(sc.status_code, 200, sc.text)
+        data = sc.json()
+        self.assertEqual(data["num_atoms"], 48)
+        self.assertEqual(data["scale_factor"], [2, 2, 2])
+        self.assertEqual(data["storage_mode"], "tryte-all-atom")
+
+        st = client.post(f"/api/sessions/{data['session_id']}/step", json={"n_steps": 15})
+        self.assertEqual(st.status_code, 200, st.text)
+        self.assertEqual(st.json()["health_status"], "bounded")
+
 if __name__ == "__main__":
     unittest.main()

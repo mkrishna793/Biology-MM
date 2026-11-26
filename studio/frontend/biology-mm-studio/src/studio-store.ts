@@ -1173,6 +1173,72 @@ export class BiologyMmStudioStore {
     }
   }
 
+
+  async scaleSystem(nx: number, ny: number, nz: number): Promise<boolean> {
+    const sid = this.state.sessionId;
+    if (!sid) return false;
+    const cx = Math.max(1, Math.min(16, Math.round(nx)));
+    const cy = Math.max(1, Math.min(16, Math.round(ny)));
+    const cz = Math.max(1, Math.min(16, Math.round(nz)));
+    this.setState({
+      isBusy: true,
+      error: null,
+      isPlaying: false,
+      pickedAtom: null,
+      isReversed: false,
+    });
+    this.sendWsCommand({ action: 'pause' });
+    try {
+      const res = await fetchJson<{
+        session_id: string;
+        title?: string;
+        num_atoms: number;
+        metrics?: SimulationMetrics;
+      }>(`/api/sessions/${encodeURIComponent(sid)}/scale-system`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          nx: cx,
+          ny: cy,
+          nz: cz,
+          storage_mode: this.state.storageMode,
+        }),
+      });
+      const newSid = res.session_id;
+      const title = res.title ?? `${this.state.sessionTitle} (${cx}x${cy}x${cz})`;
+      const nAtoms = res.num_atoms ?? 0;
+      const channel = this.state.activeChannel;
+      const palette = this.state.activePalette;
+      this.setState({
+        sessionId: newSid,
+        sessionTitle: title,
+        activePresetId: null,
+        colorMode: 'default',
+        metrics: res.metrics ?? null,
+        metricHistory: res.metrics ? [res.metrics] : [],
+        multiscale: res.metrics?.multiscale ?? null,
+        relaxationReport: null,
+        steerAtomState: { ...INITIAL_STEER_ATOM_STATE },
+        frameStats: {
+          ...this.state.frameStats,
+          nAtoms,
+          simTimePs: res.metrics?.time_ps ?? 0,
+          wsConnected: false,
+        },
+      });
+      await this.activateSessionScene(newSid, title, nAtoms, channel, palette, 'default', res.metrics?.storage_mode);
+      this.resetCamera();
+      return true;
+    } catch (err) {
+      this.setState({
+        error: err instanceof Error ? err.message : 'Failed to scale system',
+      });
+      return false;
+    } finally {
+      this.setState({ isBusy: false });
+    }
+  }
+
   async exportMvsx(): Promise<void> {
     const sid = this.state.sessionId;
     if (!sid) return;

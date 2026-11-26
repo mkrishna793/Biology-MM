@@ -85,7 +85,7 @@ from .trajectory_io import (
     write_xtc,
 )
 
-__version__ = "2.6.0"
+__version__ = "3.0.0"
 
 __all__ = [
     "ATLASFlexibilityReport",
