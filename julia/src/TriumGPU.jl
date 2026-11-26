@@ -262,7 +262,11 @@ function _populate_backend_symbols!(st::_GpuBackendHandle, h::Ptr{Cvoid}, path::
     st.sym_verlet_num_pairs = _dlsym_safe(h, :xbt_gpu_verlet_plan_num_pairs)
     st.sym_ternary_matvec   = _dlsym_safe(h, :xbt_gpu_ternary_matvec_dualrail)
     st.sym_msm_stencil27    = _dlsym_safe(h, :xbt_gpu_msm_stencil27)
-    st.sym_is_available     = _dlsym_safe(h, :xbt_gpu_is_available)
+    avail_sym = _dlsym_safe(h, :xbt_gpu_is_available)
+    if avail_sym == C_NULL && st.backend === :vulkan
+        avail_sym = _dlsym_safe(h, :xbt_vulkan_available)
+    end
+    st.sym_is_available     = avail_sym
     st.sym_unified_memory   = _dlsym_safe(h, :xbt_gpu_unified_memory)
     st.sym_max_threads      = _dlsym_safe(h, :xbt_gpu_max_threads_per_tg)
     st.sym_simd_width       = _dlsym_safe(h, :xbt_gpu_simd_width)
@@ -278,17 +282,48 @@ function _infer_backend_from_path(path::AbstractString)::Symbol
     return :metal
 end
 
+@inline function _backend_hw_available(st::_GpuBackendHandle)::Bool
+    st.handle == C_NULL && return false
+    if st.sym_is_available != C_NULL
+        return ccall(st.sym_is_available, Cint, ()) != Cint(0)
+    end
+    return true
+end
+
+function _clear_backend_handle!(st::_GpuBackendHandle)
+    st.handle = C_NULL
+    st.path = ""
+    st.sym_probe_device = C_NULL
+    st.sym_verlet_create = C_NULL
+    st.sym_verlet_eval = C_NULL
+    st.sym_verlet_destroy = C_NULL
+    st.sym_verlet_num_pairs = C_NULL
+    st.sym_ternary_matvec = C_NULL
+    st.sym_msm_stencil27 = C_NULL
+    st.sym_is_available = C_NULL
+    st.sym_unified_memory = C_NULL
+    st.sym_max_threads = C_NULL
+    st.sym_simd_width = C_NULL
+    st.sym_vram_bytes = C_NULL
+    st.md_batch_run = C_NULL
+    return st
+end
+
 function _try_open_backend!(backend::Symbol)::Bool
     st = _GPU_BACKENDS[backend]
     if st.handle != C_NULL
-        return true
+        return _backend_hw_available(st)
     end
     for p in _candidate_gpu_lib_paths(backend)
         if p == basename(p) || isfile(p)
             h = Libdl.dlopen_e(p)
             if h != C_NULL
                 _populate_backend_symbols!(st, h, String(p))
-                return true
+                if _backend_hw_available(st)
+                    return true
+                end
+                _clear_backend_handle!(st)
+                Libdl.dlclose(h)
             end
         end
     end
@@ -364,12 +399,12 @@ function has_gpu_bridge(backend::Symbol = :auto)::Bool
             init_gpu_bridge!(nothing; backend = :auto)
         end
         if backend === :auto || backend === :gpu
-            return _GPU_ACTIVE_BACKEND[] !== :cpu && _GPU_BACKENDS[_GPU_ACTIVE_BACKEND[]].handle != C_NULL
+            return _GPU_ACTIVE_BACKEND[] !== :cpu && _backend_hw_available(_GPU_BACKENDS[_GPU_ACTIVE_BACKEND[]])
         elseif backend === :cpu
             return false
         elseif haskey(_GPU_BACKENDS, backend)
             st = _GPU_BACKENDS[backend]
-            return st.handle != C_NULL
+            return _backend_hw_available(st)
         else
             return false
         end
@@ -397,7 +432,7 @@ function has_gpu_md_batch(backend::Symbol = :auto)::Bool
         end
         (target === :cpu || !haskey(_GPU_BACKENDS, target)) && return false
         st = _GPU_BACKENDS[target]
-        return _gpu_verlet_abi_ready(target) && st.md_batch_run != C_NULL
+        return _backend_hw_available(st) && _gpu_verlet_abi_ready(target) && st.md_batch_run != C_NULL
     finally
         unlock(_GPU_BRIDGE_LOCK)
     end
